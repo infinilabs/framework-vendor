@@ -323,7 +323,7 @@ func (h *Handler) handleCopyMove(w http.ResponseWriter, r *http.Request) (status
 	if err != nil {
 		return http.StatusBadRequest, errInvalidDestination
 	}
-	if u.Host != r.Host {
+	if u.Host != "" && u.Host != r.Host {
 		return http.StatusBadGateway, errInvalidDestination
 	}
 
@@ -556,7 +556,11 @@ func (h *Handler) handlePropfind(w http.ResponseWriter, r *http.Request) (status
 		if err != nil {
 			return err
 		}
-		return mw.write(makePropstatResponse(path.Join(h.Prefix, reqPath), pstats))
+		href := path.Join(h.Prefix, reqPath)
+		if href != "/" && info.IsDir() {
+			href += "/"
+		}
+		return mw.write(makePropstatResponse(href, pstats))
 	}
 
 	walkErr := walkFS(ctx, h.FileSystem, depth, reqPath, fi, walkFn)
