@@ -228,6 +228,8 @@ func (wp *workerPool) workerFunc(ch *workerChan) {
 				strings.Contains(errStr, "unexpected EOF") ||
 				strings.Contains(errStr, "EOF") ||
 				strings.Contains(errStr, "protocol wrong type for socket") ||
+				strings.Contains(errStr, "unknown certificate authority") ||
+				strings.Contains(errStr, "first record does not look like a TLS handshake") ||
 				strings.Contains(errStr, "i/o timeout")) {
 				wp.Logger.Printf("error when serving connection %q<->%q: %s", c.LocalAddr(), c.RemoteAddr(), err)
 			}
