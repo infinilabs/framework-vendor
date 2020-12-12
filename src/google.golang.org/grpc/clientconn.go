@@ -1024,6 +1024,7 @@ func (ac *addrConn) resetTransport() {
 			prefaceReceived := make(chan struct{})
 			newTr, err := ac.createTransport(addr, copts, connectDeadline, reconnect, prefaceReceived)
 			if err == nil {
+				backoffFor = 0
 				ac.mu.Lock()
 				ac.curAddr = addr
 				ac.transport = newTr
