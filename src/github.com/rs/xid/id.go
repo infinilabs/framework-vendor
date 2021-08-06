@@ -30,7 +30,7 @@
 //   - Non configured, you don't need set a unique machine and/or data center id
 //   - K-ordered
 //   - Embedded time with 1 second precision
-//   - Unicity guaranted for 16,777,216 (20 bits) unique ids per second and per host/process
+//   - Unicity guaranteed for 16,777,216 (24 bits) unique ids per second and per host/process
 //
 // Best used with xlog's RequestIDHandler (https://godoc.org/github.com/rs/xlog#RequestIDHandler).
 //
@@ -42,13 +42,14 @@
 package xid
 
 import (
-	"bytes"
 	"crypto/md5"
 	"crypto/rand"
-	"encoding/base32"
+	"database/sql/driver"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"hash/crc32"
+	"io/ioutil"
 	"os"
 	"sync/atomic"
 	"time"
@@ -60,14 +61,16 @@ import (
 type ID [rawLen]byte
 
 const (
-	trimLen    = 20 // len after padding removal
-	encodedLen = 24 // len after base32 encoding, with padding
-	decodedLen = 15 // len after base32 decoding with the padded data
+	encodedLen = 20 // string encoded len
 	rawLen     = 12 // binary raw len
+
+	// encoding stores a custom version of the base32 encoding with lower case
+	// letters.
+	encoding = "0123456789abcdefghijklmnopqrstuv"
 )
 
 // ErrInvalidID is returned when trying to unmarshal an invalid ID
-var ErrInvalidID = errors.New("invalid ID")
+var ErrInvalidID = errors.New("xid: invalid ID")
 
 // objectIDCounter is atomically incremented when generating a new ObjectId
 // using NewObjectId() function. It's used as a counter part of an id.
@@ -78,6 +81,33 @@ var objectIDCounter = randInt()
 // to NewObjectId function.
 var machineID = readMachineID()
 
+// pid stores the current process id
+var pid = os.Getpid()
+
+var nilID ID
+
+// dec is the decoding map for base32 encoding
+var dec [256]byte
+
+func init() {
+	for i := 0; i < len(dec); i++ {
+		dec[i] = 0xFF
+	}
+	for i := 0; i < len(encoding); i++ {
+		dec[encoding[i]] = byte(i)
+	}
+
+	// If PID is 1 and /proc/1/cpuset exists and is not /, we can assume that we
+	// are in a form of container and use the content of /proc/1/cpuset instead
+	// of the PID.
+	if pid == 1 {
+		b, err := ioutil.ReadFile("/proc/1/cpuset")
+		if err == nil && len(b) > 1 {
+			pid = int(crc32.ChecksumIEEE(b))
+		}
+	}
+}
+
 // readMachineId generates machine id and puts it into the machineId global
 // variable. If this function fails to get the hostname, it will cause
 // a runtime error.
@@ -85,12 +115,14 @@ func readMachineID() []byte {
 	id := make([]byte, 3)
 	if hostname, err := os.Hostname(); err == nil {
 		hw := md5.New()
-		hw.Write([]byte(hostname))
+		if _, err = hw.Write([]byte(hostname)); err != nil {
+			panic(fmt.Errorf("xid: cannot write hostname hash: %v;", err))
+		}
 		copy(id, hw.Sum(nil))
 	} else {
 		// Fallback to rand number if machine id can't be gathered
 		if _, randErr := rand.Reader.Read(id); randErr != nil {
-			panic(fmt.Errorf("Cannot get hostname nor generate a random number: %v; %v", err, randErr))
+			panic(fmt.Errorf("xid: cannot get hostname nor generate a random number: %v; %v", err, randErr))
 		}
 	}
 	return id
@@ -100,12 +132,12 @@ func readMachineID() []byte {
 func randInt() uint32 {
 	b := make([]byte, 3)
 	if _, err := rand.Reader.Read(b); err != nil {
-		panic(fmt.Errorf("Cannot generate random number: %v;", err))
+		panic(fmt.Errorf("xid: cannot generate random number: %v;", err))
 	}
 	return uint32(b[0])<<16 | uint32(b[1])<<8 | uint32(b[2])
 }
 
-// New generates a globaly unique ID
+// New generates a globally unique ID
 func New() ID {
 	var id ID
 	// Timestamp, 4 bytes, big endian
@@ -115,7 +147,6 @@ func New() ID {
 	id[5] = machineID[1]
 	id[6] = machineID[2]
 	// Pid, 2 bytes, specs don't specify endianness, but we use big endian.
-	pid := os.Getpid()
 	id[7] = byte(pid >> 8)
 	id[8] = byte(pid)
 	// Increment, 3 bytes, big endian
@@ -135,38 +166,89 @@ func FromString(id string) (ID, error) {
 
 // String returns a base32 hex lowercased with no padding representation of the id (char set is 0-9, a-v).
 func (id ID) String() string {
-	text, _ := id.MarshalText()
+	text := make([]byte, encodedLen)
+	encode(text, id[:])
 	return string(text)
 }
 
 // MarshalText implements encoding/text TextMarshaler interface
 func (id ID) MarshalText() ([]byte, error) {
 	text := make([]byte, encodedLen)
-	base32.HexEncoding.Encode(text, id[:])
-	return bytes.ToLower(text[:trimLen]), nil
+	encode(text, id[:])
+	return text, nil
+}
+
+// MarshalJSON implements encoding/json Marshaler interface
+func (id ID) MarshalJSON() ([]byte, error) {
+	if id.IsNil() {
+		return []byte("null"), nil
+	}
+	text, err := id.MarshalText()
+	return []byte(`"` + string(text) + `"`), err
+}
+
+// encode by unrolling the stdlib base32 algorithm + removing all safe checks
+func encode(dst, id []byte) {
+	dst[0] = encoding[id[0]>>3]
+	dst[1] = encoding[(id[1]>>6)&0x1F|(id[0]<<2)&0x1F]
+	dst[2] = encoding[(id[1]>>1)&0x1F]
+	dst[3] = encoding[(id[2]>>4)&0x1F|(id[1]<<4)&0x1F]
+	dst[4] = encoding[id[3]>>7|(id[2]<<1)&0x1F]
+	dst[5] = encoding[(id[3]>>2)&0x1F]
+	dst[6] = encoding[id[4]>>5|(id[3]<<3)&0x1F]
+	dst[7] = encoding[id[4]&0x1F]
+	dst[8] = encoding[id[5]>>3]
+	dst[9] = encoding[(id[6]>>6)&0x1F|(id[5]<<2)&0x1F]
+	dst[10] = encoding[(id[6]>>1)&0x1F]
+	dst[11] = encoding[(id[7]>>4)&0x1F|(id[6]<<4)&0x1F]
+	dst[12] = encoding[id[8]>>7|(id[7]<<1)&0x1F]
+	dst[13] = encoding[(id[8]>>2)&0x1F]
+	dst[14] = encoding[(id[9]>>5)|(id[8]<<3)&0x1F]
+	dst[15] = encoding[id[9]&0x1F]
+	dst[16] = encoding[id[10]>>3]
+	dst[17] = encoding[(id[11]>>6)&0x1F|(id[10]<<2)&0x1F]
+	dst[18] = encoding[(id[11]>>1)&0x1F]
+	dst[19] = encoding[(id[11]<<4)&0x1F]
 }
 
 // UnmarshalText implements encoding/text TextUnmarshaler interface
 func (id *ID) UnmarshalText(text []byte) error {
-	if len(text) != trimLen {
+	if len(text) != encodedLen {
 		return ErrInvalidID
 	}
 	for _, c := range text {
-		if !(c >= '0' && c <= '9') && !(c >= 'a' && c <= 'v') {
+		if dec[c] == 0xFF {
 			return ErrInvalidID
 		}
 	}
-	b := make([]byte, decodedLen)
-	_, err := base32.HexEncoding.Decode(b, append(bytes.ToUpper(text), '=', '=', '=', '='))
-	for i, c := range b {
-		id[i] = c
-		// The decoded len is larger than the actual len because of padding.
-		// Stop copying data when we reach raw len.
-		if i+1 == rawLen {
-			break
-		}
+	decode(id, text)
+	return nil
+}
+
+// UnmarshalJSON implements encoding/json Unmarshaler interface
+func (id *ID) UnmarshalJSON(b []byte) error {
+	s := string(b)
+	if s == "null" {
+		*id = nilID
+		return nil
 	}
-	return err
+	return id.UnmarshalText(b[1 : len(b)-1])
+}
+
+// decode by unrolling the stdlib base32 algorithm + removing all safe checks
+func decode(id *ID, src []byte) {
+	id[0] = dec[src[0]]<<3 | dec[src[1]]>>2
+	id[1] = dec[src[1]]<<6 | dec[src[2]]<<1 | dec[src[3]]>>4
+	id[2] = dec[src[3]]<<4 | dec[src[4]]>>1
+	id[3] = dec[src[4]]<<7 | dec[src[5]]<<2 | dec[src[6]]>>3
+	id[4] = dec[src[6]]<<5 | dec[src[7]]
+	id[5] = dec[src[8]]<<3 | dec[src[9]]>>2
+	id[6] = dec[src[9]]<<6 | dec[src[10]]<<1 | dec[src[11]]>>4
+	id[7] = dec[src[11]]<<4 | dec[src[12]]>>1
+	id[8] = dec[src[12]]<<7 | dec[src[13]]<<2 | dec[src[14]]>>3
+	id[9] = dec[src[14]]<<5 | dec[src[15]]
+	id[10] = dec[src[16]]<<3 | dec[src[17]]>>2
+	id[11] = dec[src[17]]<<6 | dec[src[18]]<<1 | dec[src[19]]>>4
 }
 
 // Time returns the timestamp part of the id.
@@ -195,4 +277,33 @@ func (id ID) Counter() int32 {
 	b := id[9:12]
 	// Counter is stored as big-endian 3-byte value
 	return int32(uint32(b[0])<<16 | uint32(b[1])<<8 | uint32(b[2]))
+}
+
+// Value implements the driver.Valuer interface.
+func (id ID) Value() (driver.Value, error) {
+	if id.IsNil() {
+		return nil, nil
+	}
+	b, err := id.MarshalText()
+	return string(b), err
+}
+
+// Scan implements the sql.Scanner interface.
+func (id *ID) Scan(value interface{}) (err error) {
+	switch val := value.(type) {
+	case string:
+		return id.UnmarshalText([]byte(val))
+	case []byte:
+		return id.UnmarshalText(val)
+	case nil:
+		*id = nilID
+		return nil
+	default:
+		return fmt.Errorf("xid: scanning unsupported type: %T", value)
+	}
+}
+
+// IsNil Returns true if this is a "nil" ID
+func (id ID) IsNil() bool {
+	return id == nilID
 }
