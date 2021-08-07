@@ -751,16 +751,14 @@ func (db *DB) buildSortedSetIdx(bucket string, r *Record) error {
 	}
 
 	if r.H.meta.Flag == DataZAddFlag {
-		if r.E != nil {
-			keyAndScore := strings.Split(string(r.E.Key), SeparatorForZSetKey)
-			if len(keyAndScore) == 2 {
-				key := keyAndScore[0]
-				score, _ := strconv2.StrToFloat64(keyAndScore[1])
-				if r.E == nil {
-					return ErrEntryIdxModeOpt
-				}
-				_ = db.SortedSetIdx[bucket].Put(key, zset.SCORE(score), r.E.Value)
+		keyAndScore := strings.Split(string(r.E.Key), SeparatorForZSetKey)
+		if len(keyAndScore) == 2 {
+			key := keyAndScore[0]
+			score, _ := strconv2.StrToFloat64(keyAndScore[1])
+			if r.E == nil {
+				return ErrEntryIdxModeOpt
 			}
+			_ = db.SortedSetIdx[bucket].Put(key, zset.SCORE(score), r.E.Value)
 		}
 	}
 	if r.H.meta.Flag == DataZRemFlag {
