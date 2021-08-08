@@ -27,15 +27,15 @@ type StatsdBuffer struct {
 }
 
 // NewStatsdBuffer Factory
-func NewStatsdBuffer(interval time.Duration, client *StatsdClient) *StatsdBuffer {
+func NewStatsdBuffer(interval time.Duration,buffSize int, client *StatsdClient) *StatsdBuffer {
 	sb := &StatsdBuffer{
 		flushInterval: interval,
 		statsd:        client,
-		eventChannel:  make(chan event.Event, 100),
+		eventChannel:  make(chan event.Event, buffSize),
 		events:        make(map[string]event.Event, 0),
 		closeChannel:  make(chan closeRequest, 0),
 		Logger:        log.New(os.Stdout, "[BufferedStatsdClient] ", log.Ldate|log.Ltime),
-		Verbose:       true,
+		Verbose:       false,
 	}
 	go sb.collector()
 	return sb

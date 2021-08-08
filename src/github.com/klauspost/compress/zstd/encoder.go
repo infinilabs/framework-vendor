@@ -190,7 +190,6 @@ func (e *Encoder) nextBlock(final bool) error {
 			s.filling = s.filling[:0]
 			s.headerWritten = true
 			s.fullFrameWritten = true
-			s.eofWritten = true
 			return nil
 		}
 

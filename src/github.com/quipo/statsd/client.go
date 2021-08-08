@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 	"time"
-
+	"sync"
 	"github.com/quipo/statsd/event"
 )
 
@@ -45,6 +45,7 @@ type StatsdClient struct {
 	prefix         string
 	eventStringTpl string
 	Logger         Logger
+	lock           sync.RWMutex
 }
 
 // NewStatsdClient - Factory
@@ -70,7 +71,9 @@ func (c *StatsdClient) CreateSocket() error {
 	if err != nil {
 		return err
 	}
+	c.lock.Lock()
 	c.conn = conn
+	c.lock.Unlock()
 	return nil
 }
 
@@ -87,6 +90,9 @@ func (c *StatsdClient) CreateTCPSocket() error {
 
 // Close the UDP connection
 func (c *StatsdClient) Close() error {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
 	if nil == c.conn {
 		return nil
 	}

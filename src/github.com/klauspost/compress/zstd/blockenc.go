@@ -295,7 +295,7 @@ func (b *blockEnc) encodeRaw(a []byte) {
 	b.output = bh.appendTo(b.output[:0])
 	b.output = append(b.output, a...)
 	if debug {
-		println("Adding RAW block, length", len(a), "last:", b.last)
+		println("Adding RAW block, length", len(a))
 	}
 }
 
@@ -308,7 +308,7 @@ func (b *blockEnc) encodeRawTo(dst, src []byte) []byte {
 	dst = bh.appendTo(dst)
 	dst = append(dst, src...)
 	if debug {
-		println("Adding RAW block, length", len(src), "last:", b.last)
+		println("Adding RAW block, length", len(src))
 	}
 	return dst
 }
@@ -322,7 +322,7 @@ func (b *blockEnc) encodeLits(raw bool) error {
 	// Don't compress extremely small blocks
 	if len(b.literals) < 32 || raw {
 		if debug {
-			println("Adding RAW block, length", len(b.literals), "last:", b.last)
+			println("Adding RAW block, length", len(b.literals))
 		}
 		bh.setType(blockTypeRaw)
 		b.output = bh.appendTo(b.output)
@@ -349,7 +349,7 @@ func (b *blockEnc) encodeLits(raw bool) error {
 	switch err {
 	case huff0.ErrIncompressible:
 		if debug {
-			println("Adding RAW block, length", len(b.literals), "last:", b.last)
+			println("Adding RAW block, length", len(b.literals))
 		}
 		bh.setType(blockTypeRaw)
 		b.output = bh.appendTo(b.output)
