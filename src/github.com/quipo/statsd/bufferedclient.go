@@ -1,10 +1,9 @@
 package statsd
 
 import (
-	"log"
 	"os"
 	"time"
-
+	log "github.com/cihub/seelog"
 	"github.com/quipo/statsd/event"
 )
 
@@ -22,7 +21,6 @@ type StatsdBuffer struct {
 	eventChannel  chan event.Event
 	events        map[string]event.Event
 	closeChannel  chan closeRequest
-	Logger        Logger
 	Verbose       bool
 }
 
@@ -34,7 +32,6 @@ func NewStatsdBuffer(interval time.Duration,buffSize int, client *StatsdClient) 
 		eventChannel:  make(chan event.Event, buffSize),
 		events:        make(map[string]event.Event, 0),
 		closeChannel:  make(chan closeRequest, 0),
-		Logger:        log.New(os.Stdout, "[BufferedStatsdClient] ", log.Ldate|log.Ltime),
 		Verbose:       false,
 	}
 	go sb.collector()
@@ -129,7 +126,7 @@ func (sb *StatsdBuffer) collector() {
 	// on a panic event, flush all the pending stats before panicking
 	defer func(sb *StatsdBuffer) {
 		if r := recover(); r != nil {
-			sb.Logger.Println("Caught panic, flushing stats before throwing the panic again")
+			log.Error("Caught panic, flushing stats before throwing the panic again")
 			sb.flush()
 			panic(r)
 		}
@@ -156,7 +153,7 @@ func (sb *StatsdBuffer) collector() {
 			}
 		case c := <-sb.closeChannel:
 			if sb.Verbose {
-				sb.Logger.Println("Asked to terminate. Flushing stats before returning.")
+				log.Error("Asked to terminate. Flushing stats before returning.")
 			}
 			c.reply <- sb.flush()
 			return
@@ -190,11 +187,11 @@ func (sb *StatsdBuffer) flush() (err error) {
 	}
 	err = sb.statsd.CreateSocket()
 	if nil != err {
-		sb.Logger.Println("Error establishing UDP connection for sending statsd events:", err)
+		log.Error("Error establishing UDP connection for sending statsd events:", err)
 		return err
 	}
 	if err := sb.statsd.SendEvents(sb.events); err != nil {
-		sb.Logger.Println(err)
+		log.Error(err)
 		return err
 	}
 	sb.events = make(map[string]event.Event)
