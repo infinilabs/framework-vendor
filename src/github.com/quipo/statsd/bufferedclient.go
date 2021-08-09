@@ -1,7 +1,6 @@
 package statsd
 
 import (
-	"os"
 	"time"
 	log "github.com/cihub/seelog"
 	"github.com/quipo/statsd/event"
