@@ -20,22 +20,32 @@ type UniversalOptions struct {
 
 	// Common options.
 
-	Dialer             func(ctx context.Context, network, addr string) (net.Conn, error)
-	OnConnect          func(*Conn) error
-	Password           string
-	MaxRetries         int
-	MinRetryBackoff    time.Duration
-	MaxRetryBackoff    time.Duration
-	DialTimeout        time.Duration
-	ReadTimeout        time.Duration
-	WriteTimeout       time.Duration
+	Dialer    func(ctx context.Context, network, addr string) (net.Conn, error)
+	OnConnect func(ctx context.Context, cn *Conn) error
+
+	Username         string
+	Password         string
+	SentinelPassword string
+
+	MaxRetries      int
+	MinRetryBackoff time.Duration
+	MaxRetryBackoff time.Duration
+
+	DialTimeout  time.Duration
+	ReadTimeout  time.Duration
+	WriteTimeout time.Duration
+
+	// PoolFIFO uses FIFO mode for each node connection pool GET/PUT (default LIFO).
+	PoolFIFO bool
+
 	PoolSize           int
 	MinIdleConns       int
 	MaxConnAge         time.Duration
 	PoolTimeout        time.Duration
 	IdleTimeout        time.Duration
 	IdleCheckFrequency time.Duration
-	TLSConfig          *tls.Config
+
+	TLSConfig *tls.Config
 
 	// Only cluster clients.
 
@@ -46,10 +56,12 @@ type UniversalOptions struct {
 
 	// The sentinel master name.
 	// Only failover clients.
+
 	MasterName string
 }
 
-func (o *UniversalOptions) cluster() *ClusterOptions {
+// Cluster returns cluster options created from the universal options.
+func (o *UniversalOptions) Cluster() *ClusterOptions {
 	if len(o.Addrs) == 0 {
 		o.Addrs = []string{"127.0.0.1:6379"}
 	}
@@ -59,6 +71,7 @@ func (o *UniversalOptions) cluster() *ClusterOptions {
 		Dialer:    o.Dialer,
 		OnConnect: o.OnConnect,
 
+		Username: o.Username,
 		Password: o.Password,
 
 		MaxRedirects:   o.MaxRedirects,
@@ -73,6 +86,7 @@ func (o *UniversalOptions) cluster() *ClusterOptions {
 		DialTimeout:        o.DialTimeout,
 		ReadTimeout:        o.ReadTimeout,
 		WriteTimeout:       o.WriteTimeout,
+		PoolFIFO:           o.PoolFIFO,
 		PoolSize:           o.PoolSize,
 		MinIdleConns:       o.MinIdleConns,
 		MaxConnAge:         o.MaxConnAge,
@@ -84,7 +98,8 @@ func (o *UniversalOptions) cluster() *ClusterOptions {
 	}
 }
 
-func (o *UniversalOptions) failover() *FailoverOptions {
+// Failover returns failover options created from the universal options.
+func (o *UniversalOptions) Failover() *FailoverOptions {
 	if len(o.Addrs) == 0 {
 		o.Addrs = []string{"127.0.0.1:26379"}
 	}
@@ -96,8 +111,10 @@ func (o *UniversalOptions) failover() *FailoverOptions {
 		Dialer:    o.Dialer,
 		OnConnect: o.OnConnect,
 
-		DB:       o.DB,
-		Password: o.Password,
+		DB:               o.DB,
+		Username:         o.Username,
+		Password:         o.Password,
+		SentinelPassword: o.SentinelPassword,
 
 		MaxRetries:      o.MaxRetries,
 		MinRetryBackoff: o.MinRetryBackoff,
@@ -107,6 +124,7 @@ func (o *UniversalOptions) failover() *FailoverOptions {
 		ReadTimeout:  o.ReadTimeout,
 		WriteTimeout: o.WriteTimeout,
 
+		PoolFIFO:           o.PoolFIFO,
 		PoolSize:           o.PoolSize,
 		MinIdleConns:       o.MinIdleConns,
 		MaxConnAge:         o.MaxConnAge,
@@ -118,7 +136,8 @@ func (o *UniversalOptions) failover() *FailoverOptions {
 	}
 }
 
-func (o *UniversalOptions) simple() *Options {
+// Simple returns basic options created from the universal options.
+func (o *UniversalOptions) Simple() *Options {
 	addr := "127.0.0.1:6379"
 	if len(o.Addrs) > 0 {
 		addr = o.Addrs[0]
@@ -130,6 +149,7 @@ func (o *UniversalOptions) simple() *Options {
 		OnConnect: o.OnConnect,
 
 		DB:       o.DB,
+		Username: o.Username,
 		Password: o.Password,
 
 		MaxRetries:      o.MaxRetries,
@@ -140,6 +160,7 @@ func (o *UniversalOptions) simple() *Options {
 		ReadTimeout:  o.ReadTimeout,
 		WriteTimeout: o.WriteTimeout,
 
+		PoolFIFO:           o.PoolFIFO,
 		PoolSize:           o.PoolSize,
 		MinIdleConns:       o.MinIdleConns,
 		MaxConnAge:         o.MaxConnAge,
@@ -154,38 +175,39 @@ func (o *UniversalOptions) simple() *Options {
 // --------------------------------------------------------------------
 
 // UniversalClient is an abstract client which - based on the provided options -
-// can connect to either clusters, or sentinel-backed failover instances
-// or simple single-instance servers. This can be useful for testing
-// cluster-specific applications locally.
+// represents either a ClusterClient, a FailoverClient, or a single-node Client.
+// This can be useful for testing cluster-specific applications locally or having different
+// clients in different environments.
 type UniversalClient interface {
 	Cmdable
 	Context() context.Context
 	AddHook(Hook)
-	Watch(fn func(*Tx) error, keys ...string) error
-	Do(args ...interface{}) *Cmd
-	DoContext(ctx context.Context, args ...interface{}) *Cmd
-	Process(cmd Cmder) error
-	ProcessContext(ctx context.Context, cmd Cmder) error
-	Subscribe(channels ...string) *PubSub
-	PSubscribe(channels ...string) *PubSub
+	Watch(ctx context.Context, fn func(*Tx) error, keys ...string) error
+	Do(ctx context.Context, args ...interface{}) *Cmd
+	Process(ctx context.Context, cmd Cmder) error
+	Subscribe(ctx context.Context, channels ...string) *PubSub
+	PSubscribe(ctx context.Context, channels ...string) *PubSub
 	Close() error
+	PoolStats() *PoolStats
 }
 
-var _ UniversalClient = (*Client)(nil)
-var _ UniversalClient = (*ClusterClient)(nil)
-var _ UniversalClient = (*Ring)(nil)
+var (
+	_ UniversalClient = (*Client)(nil)
+	_ UniversalClient = (*ClusterClient)(nil)
+	_ UniversalClient = (*Ring)(nil)
+)
 
-// NewUniversalClient returns a new multi client. The type of client returned depends
-// on the following three conditions:
+// NewUniversalClient returns a new multi client. The type of the returned client depends
+// on the following conditions:
 //
-// 1. if a MasterName is passed a sentinel-backed FailoverClient will be returned
-// 2. if the number of Addrs is two or more, a ClusterClient will be returned
-// 3. otherwise, a single-node redis Client will be returned.
+// 1. If the MasterName option is specified, a sentinel-backed FailoverClient is returned.
+// 2. if the number of Addrs is two or more, a ClusterClient is returned.
+// 3. Otherwise, a single-node Client is returned.
 func NewUniversalClient(opts *UniversalOptions) UniversalClient {
 	if opts.MasterName != "" {
-		return NewFailoverClient(opts.failover())
+		return NewFailoverClient(opts.Failover())
 	} else if len(opts.Addrs) > 1 {
-		return NewClusterClient(opts.cluster())
+		return NewClusterClient(opts.Cluster())
 	}
-	return NewClient(opts.simple())
+	return NewClient(opts.Simple())
 }

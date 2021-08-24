@@ -5,13 +5,14 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/go-redis/redis"
+	"github.com/go-redis/redis/v8"
 )
 
-func benchmarkRedisClient(poolSize int) *redis.Client {
+func benchmarkRedisClient(ctx context.Context, poolSize int) *redis.Client {
 	client := redis.NewClient(&redis.Options{
 		Addr:         ":6379",
 		DialTimeout:  time.Second,
@@ -19,36 +20,62 @@ func benchmarkRedisClient(poolSize int) *redis.Client {
 		WriteTimeout: time.Second,
 		PoolSize:     poolSize,
 	})
-	if err := client.FlushDB().Err(); err != nil {
+	if err := client.FlushDB(ctx).Err(); err != nil {
 		panic(err)
 	}
 	return client
 }
 
 func BenchmarkRedisPing(b *testing.B) {
-	client := benchmarkRedisClient(10)
-	defer client.Close()
+	ctx := context.Background()
+	rdb := benchmarkRedisClient(ctx, 10)
+	defer rdb.Close()
 
 	b.ResetTimer()
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			if err := client.Ping().Err(); err != nil {
+			if err := rdb.Ping(ctx).Err(); err != nil {
 				b.Fatal(err)
 			}
 		}
 	})
 }
 
+func BenchmarkSetGoroutines(b *testing.B) {
+	ctx := context.Background()
+	rdb := benchmarkRedisClient(ctx, 10)
+	defer rdb.Close()
+
+	for i := 0; i < b.N; i++ {
+		var wg sync.WaitGroup
+
+		for i := 0; i < 1000; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+
+				err := rdb.Set(ctx, "hello", "world", 0).Err()
+				if err != nil {
+					panic(err)
+				}
+			}()
+		}
+
+		wg.Wait()
+	}
+}
+
 func BenchmarkRedisGetNil(b *testing.B) {
-	client := benchmarkRedisClient(10)
+	ctx := context.Background()
+	client := benchmarkRedisClient(ctx, 10)
 	defer client.Close()
 
 	b.ResetTimer()
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			if err := client.Get("key").Err(); err != redis.Nil {
+			if err := client.Get(ctx, "key").Err(); err != redis.Nil {
 				b.Fatal(err)
 			}
 		}
@@ -80,7 +107,8 @@ func BenchmarkRedisSetString(b *testing.B) {
 	}
 	for _, bm := range benchmarks {
 		b.Run(bm.String(), func(b *testing.B) {
-			client := benchmarkRedisClient(bm.poolSize)
+			ctx := context.Background()
+			client := benchmarkRedisClient(ctx, bm.poolSize)
 			defer client.Close()
 
 			value := strings.Repeat("1", bm.valueSize)
@@ -89,7 +117,7 @@ func BenchmarkRedisSetString(b *testing.B) {
 
 			b.RunParallel(func(pb *testing.PB) {
 				for pb.Next() {
-					err := client.Set("key", value, 0).Err()
+					err := client.Set(ctx, "key", value, 0).Err()
 					if err != nil {
 						b.Fatal(err)
 					}
@@ -100,7 +128,8 @@ func BenchmarkRedisSetString(b *testing.B) {
 }
 
 func BenchmarkRedisSetGetBytes(b *testing.B) {
-	client := benchmarkRedisClient(10)
+	ctx := context.Background()
+	client := benchmarkRedisClient(ctx, 10)
 	defer client.Close()
 
 	value := bytes.Repeat([]byte{'1'}, 10000)
@@ -109,11 +138,11 @@ func BenchmarkRedisSetGetBytes(b *testing.B) {
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			if err := client.Set("key", value, 0).Err(); err != nil {
+			if err := client.Set(ctx, "key", value, 0).Err(); err != nil {
 				b.Fatal(err)
 			}
 
-			got, err := client.Get("key").Bytes()
+			got, err := client.Get(ctx, "key").Bytes()
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -125,10 +154,11 @@ func BenchmarkRedisSetGetBytes(b *testing.B) {
 }
 
 func BenchmarkRedisMGet(b *testing.B) {
-	client := benchmarkRedisClient(10)
+	ctx := context.Background()
+	client := benchmarkRedisClient(ctx, 10)
 	defer client.Close()
 
-	if err := client.MSet("key1", "hello1", "key2", "hello2").Err(); err != nil {
+	if err := client.MSet(ctx, "key1", "hello1", "key2", "hello2").Err(); err != nil {
 		b.Fatal(err)
 	}
 
@@ -136,7 +166,7 @@ func BenchmarkRedisMGet(b *testing.B) {
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			if err := client.MGet("key1", "key2").Err(); err != nil {
+			if err := client.MGet(ctx, "key1", "key2").Err(); err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -144,17 +174,18 @@ func BenchmarkRedisMGet(b *testing.B) {
 }
 
 func BenchmarkSetExpire(b *testing.B) {
-	client := benchmarkRedisClient(10)
+	ctx := context.Background()
+	client := benchmarkRedisClient(ctx, 10)
 	defer client.Close()
 
 	b.ResetTimer()
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			if err := client.Set("key", "hello", 0).Err(); err != nil {
+			if err := client.Set(ctx, "key", "hello", 0).Err(); err != nil {
 				b.Fatal(err)
 			}
-			if err := client.Expire("key", time.Second).Err(); err != nil {
+			if err := client.Expire(ctx, "key", time.Second).Err(); err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -162,16 +193,17 @@ func BenchmarkSetExpire(b *testing.B) {
 }
 
 func BenchmarkPipeline(b *testing.B) {
-	client := benchmarkRedisClient(10)
+	ctx := context.Background()
+	client := benchmarkRedisClient(ctx, 10)
 	defer client.Close()
 
 	b.ResetTimer()
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			_, err := client.Pipelined(func(pipe redis.Pipeliner) error {
-				pipe.Set("key", "hello", 0)
-				pipe.Expire("key", time.Second)
+			_, err := client.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+				pipe.Set(ctx, "key", "hello", 0)
+				pipe.Expire(ctx, "key", time.Second)
 				return nil
 			})
 			if err != nil {
@@ -182,14 +214,15 @@ func BenchmarkPipeline(b *testing.B) {
 }
 
 func BenchmarkZAdd(b *testing.B) {
-	client := benchmarkRedisClient(10)
+	ctx := context.Background()
+	client := benchmarkRedisClient(ctx, 10)
 	defer client.Close()
 
 	b.ResetTimer()
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			err := client.ZAdd("key", &redis.Z{
+			err := client.ZAdd(ctx, "key", &redis.Z{
 				Score:  float64(1),
 				Member: "hello",
 			}).Err()
@@ -203,10 +236,9 @@ func BenchmarkZAdd(b *testing.B) {
 var clientSink *redis.Client
 
 func BenchmarkWithContext(b *testing.B) {
-	rdb := benchmarkRedisClient(10)
-	defer rdb.Close()
-
 	ctx := context.Background()
+	rdb := benchmarkRedisClient(ctx, 10)
+	defer rdb.Close()
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -219,10 +251,9 @@ func BenchmarkWithContext(b *testing.B) {
 var ringSink *redis.Ring
 
 func BenchmarkRingWithContext(b *testing.B) {
+	ctx := context.Background()
 	rdb := redis.NewRing(&redis.RingOptions{})
 	defer rdb.Close()
-
-	ctx := context.Background()
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -237,7 +268,7 @@ func BenchmarkRingWithContext(b *testing.B) {
 func newClusterScenario() *clusterScenario {
 	return &clusterScenario{
 		ports:     []string{"8220", "8221", "8222", "8223", "8224", "8225"},
-		nodeIds:   make([]string, 6),
+		nodeIDs:   make([]string, 6),
 		processes: make(map[string]*redisProcess, 6),
 		clients:   make(map[string]*redis.Client, 6),
 	}
@@ -248,20 +279,21 @@ func BenchmarkClusterPing(b *testing.B) {
 		b.Skip("skipping in short mode")
 	}
 
+	ctx := context.Background()
 	cluster := newClusterScenario()
-	if err := startCluster(cluster); err != nil {
+	if err := startCluster(ctx, cluster); err != nil {
 		b.Fatal(err)
 	}
-	defer stopCluster(cluster)
+	defer cluster.Close()
 
-	client := cluster.clusterClient(redisClusterOptions())
+	client := cluster.newClusterClient(ctx, redisClusterOptions())
 	defer client.Close()
 
 	b.ResetTimer()
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			err := client.Ping().Err()
+			err := client.Ping(ctx).Err()
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -274,13 +306,14 @@ func BenchmarkClusterSetString(b *testing.B) {
 		b.Skip("skipping in short mode")
 	}
 
+	ctx := context.Background()
 	cluster := newClusterScenario()
-	if err := startCluster(cluster); err != nil {
+	if err := startCluster(ctx, cluster); err != nil {
 		b.Fatal(err)
 	}
-	defer stopCluster(cluster)
+	defer cluster.Close()
 
-	client := cluster.clusterClient(redisClusterOptions())
+	client := cluster.newClusterClient(ctx, redisClusterOptions())
 	defer client.Close()
 
 	value := string(bytes.Repeat([]byte{'1'}, 10000))
@@ -289,7 +322,7 @@ func BenchmarkClusterSetString(b *testing.B) {
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			err := client.Set("key", value, 0).Err()
+			err := client.Set(ctx, "key", value, 0).Err()
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -297,37 +330,12 @@ func BenchmarkClusterSetString(b *testing.B) {
 	})
 }
 
-func BenchmarkClusterReloadState(b *testing.B) {
-	if testing.Short() {
-		b.Skip("skipping in short mode")
-	}
-
-	cluster := newClusterScenario()
-	if err := startCluster(cluster); err != nil {
-		b.Fatal(err)
-	}
-	defer stopCluster(cluster)
-
-	client := cluster.clusterClient(redisClusterOptions())
-	defer client.Close()
-
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		err := client.ReloadState()
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
 var clusterSink *redis.ClusterClient
 
 func BenchmarkClusterWithContext(b *testing.B) {
+	ctx := context.Background()
 	rdb := redis.NewClusterClient(&redis.ClusterOptions{})
 	defer rdb.Close()
-
-	ctx := context.Background()
 
 	b.ResetTimer()
 	b.ReportAllocs()

@@ -1,8 +1,9 @@
 package hashtag
 
 import (
-	"math/rand"
 	"strings"
+
+	"github.com/go-redis/redis/v8/internal/rand"
 )
 
 const slotNumber = 16384
@@ -59,7 +60,7 @@ func RandomSlot() int {
 	return rand.Intn(slotNumber)
 }
 
-// hashSlot returns a consistent slot number between 0 and 16383
+// Slot returns a consistent slot number between 0 and 16383
 // for any given string key.
 func Slot(key string) int {
 	if key == "" {

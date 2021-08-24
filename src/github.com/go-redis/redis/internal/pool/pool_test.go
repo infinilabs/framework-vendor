@@ -2,18 +2,19 @@ package pool_test
 
 import (
 	"context"
+	"net"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/go-redis/redis/internal/pool"
+	"github.com/go-redis/redis/v8/internal/pool"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
 
 var _ = Describe("ConnPool", func() {
-	c := context.Background()
+	ctx := context.Background()
 	var connPool *pool.ConnPool
 
 	BeforeEach(func() {
@@ -30,15 +31,52 @@ var _ = Describe("ConnPool", func() {
 		connPool.Close()
 	})
 
+	It("should safe close", func() {
+		const minIdleConns = 10
+
+		var (
+			wg         sync.WaitGroup
+			closedChan = make(chan struct{})
+		)
+		wg.Add(minIdleConns)
+		connPool = pool.NewConnPool(&pool.Options{
+			Dialer: func(ctx context.Context) (net.Conn, error) {
+				wg.Done()
+				<-closedChan
+				return &net.TCPConn{}, nil
+			},
+			PoolSize:           10,
+			PoolTimeout:        time.Hour,
+			IdleTimeout:        time.Millisecond,
+			IdleCheckFrequency: time.Millisecond,
+			MinIdleConns:       minIdleConns,
+		})
+		wg.Wait()
+		Expect(connPool.Close()).NotTo(HaveOccurred())
+		close(closedChan)
+
+		// We wait for 1 second and believe that checkMinIdleConns has been executed.
+		time.Sleep(time.Second)
+
+		Expect(connPool.Stats()).To(Equal(&pool.Stats{
+			Hits:       0,
+			Misses:     0,
+			Timeouts:   0,
+			TotalConns: 0,
+			IdleConns:  0,
+			StaleConns: 0,
+		}))
+	})
+
 	It("should unblock client when conn is removed", func() {
 		// Reserve one connection.
-		cn, err := connPool.Get(c)
+		cn, err := connPool.Get(ctx)
 		Expect(err).NotTo(HaveOccurred())
 
 		// Reserve all other connections.
 		var cns []*pool.Conn
 		for i := 0; i < 9; i++ {
-			cn, err := connPool.Get(c)
+			cn, err := connPool.Get(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			cns = append(cns, cn)
 		}
@@ -49,11 +87,11 @@ var _ = Describe("ConnPool", func() {
 			defer GinkgoRecover()
 
 			started <- true
-			_, err := connPool.Get(c)
+			_, err := connPool.Get(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			done <- true
 
-			connPool.Put(cn)
+			connPool.Put(ctx, cn)
 		}()
 		<-started
 
@@ -65,7 +103,7 @@ var _ = Describe("ConnPool", func() {
 			// ok
 		}
 
-		connPool.Remove(cn)
+		connPool.Remove(ctx, cn, nil)
 
 		// Check that Get is unblocked.
 		select {
@@ -76,14 +114,14 @@ var _ = Describe("ConnPool", func() {
 		}
 
 		for _, cn := range cns {
-			connPool.Put(cn)
+			connPool.Put(ctx, cn)
 		}
 	})
 })
 
 var _ = Describe("MinIdleConns", func() {
-	c := context.Background()
 	const poolSize = 100
+	ctx := context.Background()
 	var minIdleConns int
 	var connPool *pool.ConnPool
 
@@ -113,7 +151,7 @@ var _ = Describe("MinIdleConns", func() {
 
 			BeforeEach(func() {
 				var err error
-				cn, err = connPool.Get(c)
+				cn, err = connPool.Get(ctx)
 				Expect(err).NotTo(HaveOccurred())
 
 				Eventually(func() int {
@@ -128,7 +166,7 @@ var _ = Describe("MinIdleConns", func() {
 
 			Context("after Remove", func() {
 				BeforeEach(func() {
-					connPool.Remove(cn)
+					connPool.Remove(ctx, cn, nil)
 				})
 
 				It("has idle connections", func() {
@@ -148,7 +186,7 @@ var _ = Describe("MinIdleConns", func() {
 				perform(poolSize, func(_ int) {
 					defer GinkgoRecover()
 
-					cn, err := connPool.Get(c)
+					cn, err := connPool.Get(ctx)
 					Expect(err).NotTo(HaveOccurred())
 					mu.Lock()
 					cns = append(cns, cn)
@@ -163,7 +201,7 @@ var _ = Describe("MinIdleConns", func() {
 			It("Get is blocked", func() {
 				done := make(chan struct{})
 				go func() {
-					connPool.Get(c)
+					connPool.Get(ctx)
 					close(done)
 				}()
 
@@ -186,7 +224,7 @@ var _ = Describe("MinIdleConns", func() {
 				BeforeEach(func() {
 					perform(len(cns), func(i int) {
 						mu.RLock()
-						connPool.Put(cns[i])
+						connPool.Put(ctx, cns[i])
 						mu.RUnlock()
 					})
 
@@ -205,7 +243,7 @@ var _ = Describe("MinIdleConns", func() {
 				BeforeEach(func() {
 					perform(len(cns), func(i int) {
 						mu.RLock()
-						connPool.Remove(cns[i])
+						connPool.Remove(ctx, cns[i], nil)
 						mu.RUnlock()
 					})
 
@@ -250,11 +288,10 @@ var _ = Describe("MinIdleConns", func() {
 })
 
 var _ = Describe("conns reaper", func() {
-	c := context.Background()
-
 	const idleTimeout = time.Minute
 	const maxAge = time.Hour
 
+	ctx := context.Background()
 	var connPool *pool.ConnPool
 	var conns, staleConns, closedConns []*pool.Conn
 
@@ -279,7 +316,7 @@ var _ = Describe("conns reaper", func() {
 			// add stale connections
 			staleConns = nil
 			for i := 0; i < 3; i++ {
-				cn, err := connPool.Get(c)
+				cn, err := connPool.Get(ctx)
 				Expect(err).NotTo(HaveOccurred())
 				switch typ {
 				case "idle":
@@ -293,13 +330,13 @@ var _ = Describe("conns reaper", func() {
 
 			// add fresh connections
 			for i := 0; i < 3; i++ {
-				cn, err := connPool.Get(c)
+				cn, err := connPool.Get(ctx)
 				Expect(err).NotTo(HaveOccurred())
 				conns = append(conns, cn)
 			}
 
 			for _, cn := range conns {
-				connPool.Put(cn)
+				connPool.Put(ctx, cn)
 			}
 
 			Expect(connPool.Len()).To(Equal(6))
@@ -338,7 +375,7 @@ var _ = Describe("conns reaper", func() {
 			for j := 0; j < 3; j++ {
 				var freeCns []*pool.Conn
 				for i := 0; i < 3; i++ {
-					cn, err := connPool.Get(c)
+					cn, err := connPool.Get(ctx)
 					Expect(err).NotTo(HaveOccurred())
 					Expect(cn).NotTo(BeNil())
 					freeCns = append(freeCns, cn)
@@ -347,7 +384,7 @@ var _ = Describe("conns reaper", func() {
 				Expect(connPool.Len()).To(Equal(3))
 				Expect(connPool.IdleLen()).To(Equal(0))
 
-				cn, err := connPool.Get(c)
+				cn, err := connPool.Get(ctx)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(cn).NotTo(BeNil())
 				conns = append(conns, cn)
@@ -355,13 +392,13 @@ var _ = Describe("conns reaper", func() {
 				Expect(connPool.Len()).To(Equal(4))
 				Expect(connPool.IdleLen()).To(Equal(0))
 
-				connPool.Remove(cn)
+				connPool.Remove(ctx, cn, nil)
 
 				Expect(connPool.Len()).To(Equal(3))
 				Expect(connPool.IdleLen()).To(Equal(0))
 
 				for _, cn := range freeCns {
-					connPool.Put(cn)
+					connPool.Put(ctx, cn)
 				}
 
 				Expect(connPool.Len()).To(Equal(3))
@@ -375,7 +412,7 @@ var _ = Describe("conns reaper", func() {
 })
 
 var _ = Describe("race", func() {
-	c := context.Background()
+	ctx := context.Background()
 	var connPool *pool.ConnPool
 	var C, N int
 
@@ -402,18 +439,18 @@ var _ = Describe("race", func() {
 
 		perform(C, func(id int) {
 			for i := 0; i < N; i++ {
-				cn, err := connPool.Get(c)
+				cn, err := connPool.Get(ctx)
 				Expect(err).NotTo(HaveOccurred())
 				if err == nil {
-					connPool.Put(cn)
+					connPool.Put(ctx, cn)
 				}
 			}
 		}, func(id int) {
 			for i := 0; i < N; i++ {
-				cn, err := connPool.Get(c)
+				cn, err := connPool.Get(ctx)
 				Expect(err).NotTo(HaveOccurred())
 				if err == nil {
-					connPool.Remove(cn)
+					connPool.Remove(ctx, cn, nil)
 				}
 			}
 		})
