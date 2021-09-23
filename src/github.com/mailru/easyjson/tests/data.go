@@ -659,6 +659,20 @@ var deepNestString = `{` +
 	`"NamedStringSlice":["value4","value5"]` +
 	`}`
 
+type DeepNestOptional struct {
+	MapSlice []map[Str]Str `json:",omitempty"`
+}
+
+var deepNestOptionalValue = DeepNestOptional{
+	MapSlice: []map[Str]Str{{}},
+}
+
+var deepNestOptionalString = `{` +
+	`"MapSlice":[` +
+	`{}` +
+	`]` +
+	`}`
+
 //easyjson:json
 type Ints []int
 
@@ -676,6 +690,12 @@ var mapStringStringString = `{"a":"b"}`
 type RequiredOptionalStruct struct {
 	FirstName string `json:"first_name,required"`
 	Lastname  string `json:"last_name"`
+}
+
+type RequiredOptionalMap struct {
+	ReqMap         map[int]string `json:"req_map,required"`
+	OmitEmptyMap   map[int]string `json:"oe_map,omitempty"`
+	NoOmitEmptyMap map[int]string `json:"noe_map,!omitempty"`
 }
 
 //easyjson:json
