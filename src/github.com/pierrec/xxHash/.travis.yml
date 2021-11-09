@@ -1,0 +1,15 @@
+arch:
+  - amd64
+  - ppc64le
+language: go
+
+go:
+  - 1.13
+  - 1.14
+  - 1.15
+
+script: 
+ - go test -cpu=2 github.com/pierrec/xxHash/xxHash32
+ - go test -cpu=2 github.com/pierrec/xxHash/xxHash64
+ - go test -cpu=2 -race github.com/pierrec/xxHash/xxHash32
+ - go test -cpu=2 -race github.com/pierrec/xxHash/xxHash64
