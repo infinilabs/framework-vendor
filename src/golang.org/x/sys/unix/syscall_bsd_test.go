@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build darwin || dragonfly || freebsd || openbsd
 // +build darwin dragonfly freebsd openbsd
 
 package unix_test
@@ -69,6 +70,14 @@ func TestSysctlUint32(t *testing.T) {
 func TestSysctlClockinfo(t *testing.T) {
 	ci, err := unix.SysctlClockinfo("kern.clockrate")
 	if err != nil {
+		if runtime.GOOS == "openbsd" && (err == unix.ENOMEM || err == unix.EIO) {
+			if osrev, _ := unix.SysctlUint32("kern.osrevision"); osrev <= 202010 {
+				// SysctlClockinfo should fail gracefully due to a struct size
+				// mismatch on OpenBSD 6.8 and earlier, see
+				// https://golang.org/issue/47629
+				return
+			}
+		}
 		t.Fatal(err)
 	}
 	t.Logf("tick = %v, hz = %v, profhz = %v, stathz = %v",

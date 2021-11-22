@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/valyala/bytebufferpool"
+	"infini.sh/framework/lib/bytebufferpool"
 )
 
 // ExecuteFunc calls f on each template tag (placeholder) occurrence.
