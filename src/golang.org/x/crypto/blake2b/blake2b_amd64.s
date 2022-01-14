@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build amd64,!gccgo,!appengine
+// +build amd64,gc,!purego
 
 #include "textflag.h"
 
@@ -278,13 +278,4 @@ noinc:
 	MOVQ R9, 8(BX)
 
 	MOVQ BP, SP
-	RET
-
-// func supportsSSE4() bool
-TEXT ·supportsSSE4(SB), 4, $0-1
-	MOVL $1, AX
-	CPUID
-	SHRL $19, CX  // Bit 19 indicates SSE4 support
-	ANDL $1, CX  // CX != 0 if support SSE4
-	MOVB CX, ret+0(FP)
 	RET

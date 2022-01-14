@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build 386,!gccgo,!appengine
+// +build 386,gc,!purego
 
 #include "textflag.h"
 
@@ -432,29 +432,4 @@ loop:
 	MOVOU X1, 16(AX)
 
 	MOVL BP, SP
-	RET
-
-// func supportSSSE3() bool
-TEXT ·supportSSSE3(SB), 4, $0-1
-	MOVL $1, AX
-	CPUID
-	MOVL CX, BX
-	ANDL $0x1, BX      // supports SSE3
-	JZ   FALSE
-	ANDL $0x200, CX    // supports SSSE3
-	JZ   FALSE
-	MOVB $1, ret+0(FP)
-	RET
-
-FALSE:
-	MOVB $0, ret+0(FP)
-	RET
-
-// func supportSSE2() bool
-TEXT ·supportSSE2(SB), 4, $0-1
-	MOVL $1, AX
-	CPUID
-	SHRL $26, DX
-	ANDL $1, DX        // DX != 0 if support SSE2
-	MOVB DX, ret+0(FP)
 	RET
