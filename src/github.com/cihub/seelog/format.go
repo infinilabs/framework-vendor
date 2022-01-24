@@ -50,7 +50,7 @@ const (
 	TimeFormat        = "15:04:05"
 )
 
-var DefaultMsgFormat = "%Ns [%Level] %Msg%n"
+var DefaultMsgFormat = "[%Date(01-02) %Time] [%LEV] [%File:%Line] %Msg%n"
 
 var (
 	DefaultFormatter *formatter
