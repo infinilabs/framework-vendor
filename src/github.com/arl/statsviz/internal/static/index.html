@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>Statsviz</title>
+    <meta charset="utf-8">
+    <meta name="description" content="Statsviz interface" />
+    <link rel="stylesheet" href="./semantic/semantic.min.css" />
+    <script src="./jquery-3.6.0.min.js"></script>
+    <script src="./plotly-basic-2.9.0.min.js"></script>
+    <script src="./plotly-cartesian-2.9.0.min.js"></script>
+    <script src="./semantic/semantic.min.js"></script>
+</head>
+
+<body>
+    <div class="ui fixed inverted menu">
+        <div class="ui container">
+            <a class="header item">Statsviz
+            </a>
+            <a class="right item" href="https://github.com/arl/statsviz">
+                <i class="github icon"></i> Github
+            </a>
+            <a class="item" href="https://pkg.go.dev/runtime#MemStats">
+                <i class="info icon"></i> runtime.MemStats
+            </a>
+        </div>
+    </div>
+
+    <div class="ui stackable grid">
+        <div class="eight wide column reveal" style="flex: 0 0 800px;">
+
+            <div class="ui styled fluid accordion">
+                <div class="active title">
+                    <i class="dropdown icon"></i> Heap
+                </div>
+                <div class="active content">
+                    <div id="heap" class="transition visible plot"></div>
+                </div>
+                <div class="title">
+                    <i class="dropdown icon"></i> MSpan / MCache
+                </div>
+                <div class="content">
+                    <div id="mspan-mcache" class="transition hidden plot"></div>
+                </div>
+                <div class="title">
+                    <i class="dropdown icon"></i> Size Classes
+                </div>
+                <div class="content">
+                    <div id="size-classes" class="transition hidden plot"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="eight wide column reveal" style="flex: 0 0 800px;">
+            <div class="ui styled fluid accordion">
+                <div class="title">
+                    <i class="dropdown icon"></i> Objects
+                </div>
+                <div class="content">
+                    <div id="objects" class="transition visible plot"></div>
+                </div>
+                <div class="title">
+                    <i class="dropdown icon"></i> Goroutines
+                </div>
+                <div class="content">
+                    <div id="goroutines" class="transition visible plot"></div>
+                </div>
+                <div class="title">
+                    <i class="dropdown icon"></i> GC / CPU fraction
+                </div>
+                <div class="content">
+                    <div id="gcfraction" class="transition hidden plot"></div>
+                </div>
+            </div>
+        </div>
+
+        <script type="module" src="./app.js"></script>
+</body>
+
+</html>
