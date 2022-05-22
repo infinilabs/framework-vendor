@@ -1,3 +1,20 @@
+// Licensed to Elasticsearch B.V. under one or more contributor
+// license agreements. See the NOTICE file distributed with
+// this work for additional information regarding copyright
+// ownership. Elasticsearch B.V. licenses this file to you under
+// the Apache License, Version 2.0 (the "License"); you may
+// not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
 package ucfg
 
 import (
@@ -373,6 +390,495 @@ func TestMergeChildArray(t *testing.T) {
 	}
 }
 
+func TestMergeFieldHandling(t *testing.T) {
+
+	tests := []struct {
+		Name    string
+		Configs []interface{}
+		Options []Option
+		Assert  func(t *testing.T, c *Config)
+	}{
+		{
+			"default append w/ replace paths",
+			[]interface{}{
+				map[string]interface{}{
+					"paths": []interface{}{
+						"removed_1.log",
+						"removed_2.log",
+						"removed_2.log",
+					},
+					"processors": []interface{}{
+						map[string]interface{}{
+							"add_locale": map[string]interface{}{},
+						},
+					},
+				},
+				map[string]interface{}{
+					"paths": []interface{}{
+						"container.log",
+					},
+					"processors": []interface{}{
+						map[string]interface{}{
+							"add_fields": map[string]interface{}{
+								"foo": "bar",
+							},
+						},
+					},
+				},
+			},
+			[]Option{
+				PathSep("."),
+				AppendValues,
+				FieldReplaceValues("paths"),
+			},
+			func(t *testing.T, c *Config) {
+				unpacked := make(map[string]interface{})
+				assert.NoError(t, c.Unpack(unpacked))
+
+				paths, _ := unpacked["paths"]
+				assert.Len(t, paths, 1)
+				assert.Equal(t, []interface{}{"container.log"}, paths)
+
+				processors, _ := unpacked["processors"]
+				assert.Len(t, processors, 2)
+
+				processorNames := make([]string, 2)
+				procs := processors.([]interface{})
+				for i, proc := range procs {
+					for name := range proc.(map[string]interface{}) {
+						processorNames[i] = name
+					}
+				}
+				assert.Equal(t, []string{"add_locale", "add_fields"}, processorNames)
+			},
+		},
+		{
+			"default prepend w/ replace paths",
+			[]interface{}{
+				map[string]interface{}{
+					"paths": []interface{}{
+						"removed_1.log",
+						"removed_2.log",
+						"removed_2.log",
+					},
+					"processors": []interface{}{
+						map[string]interface{}{
+							"add_locale": map[string]interface{}{},
+						},
+					},
+				},
+				map[string]interface{}{
+					"paths": []interface{}{
+						"container.log",
+					},
+					"processors": []interface{}{
+						map[string]interface{}{
+							"add_fields": map[string]interface{}{
+								"foo": "bar",
+							},
+						},
+					},
+				},
+			},
+			[]Option{
+				PathSep("."),
+				PrependValues,
+				FieldReplaceValues("paths"),
+			},
+			func(t *testing.T, c *Config) {
+				unpacked := make(map[string]interface{})
+				assert.NoError(t, c.Unpack(unpacked))
+
+				paths, _ := unpacked["paths"]
+				assert.Len(t, paths, 1)
+				assert.Equal(t, []interface{}{"container.log"}, paths)
+
+				processors, _ := unpacked["processors"]
+				assert.Len(t, processors, 2)
+
+				processorNames := make([]string, 2)
+				procs := processors.([]interface{})
+				for i, proc := range procs {
+					for name := range proc.(map[string]interface{}) {
+						processorNames[i] = name
+					}
+				}
+				assert.Equal(t, []string{"add_fields", "add_locale"}, processorNames)
+			},
+		},
+		{
+			"replace paths and append processors",
+			[]interface{}{
+				map[string]interface{}{
+					"paths": []interface{}{
+						"removed_1.log",
+						"removed_2.log",
+						"removed_2.log",
+					},
+					"processors": []interface{}{
+						map[string]interface{}{
+							"add_locale": map[string]interface{}{},
+						},
+					},
+				},
+				map[string]interface{}{
+					"paths": []interface{}{
+						"container.log",
+					},
+					"processors": []interface{}{
+						map[string]interface{}{
+							"add_fields": map[string]interface{}{
+								"foo": "bar",
+							},
+						},
+					},
+				},
+			},
+			[]Option{
+				PathSep("."),
+				FieldReplaceValues("paths"),
+				FieldAppendValues("processors"),
+			},
+			func(t *testing.T, c *Config) {
+				unpacked := make(map[string]interface{})
+				assert.NoError(t, c.Unpack(unpacked))
+
+				paths, _ := unpacked["paths"]
+				assert.Len(t, paths, 1)
+				assert.Equal(t, []interface{}{"container.log"}, paths)
+
+				processors, _ := unpacked["processors"]
+				assert.Len(t, processors, 2)
+
+				processorNames := make([]string, 2)
+				procs := processors.([]interface{})
+				for i, proc := range procs {
+					for name := range proc.(map[string]interface{}) {
+						processorNames[i] = name
+					}
+				}
+				assert.Equal(t, []string{"add_locale", "add_fields"}, processorNames)
+			},
+		},
+		{
+			"default append w/ replace paths and prepend processors",
+			[]interface{}{
+				map[string]interface{}{
+					"paths": []interface{}{
+						"removed_1.log",
+						"removed_2.log",
+						"removed_2.log",
+					},
+					"processors": []interface{}{
+						map[string]interface{}{
+							"add_locale": map[string]interface{}{},
+						},
+					},
+				},
+				map[string]interface{}{
+					"paths": []interface{}{
+						"container.log",
+					},
+					"processors": []interface{}{
+						map[string]interface{}{
+							"add_fields": map[string]interface{}{
+								"foo": "bar",
+							},
+						},
+					},
+				},
+			},
+			[]Option{
+				PathSep("."),
+				AppendValues,
+				FieldReplaceValues("paths"),
+				FieldPrependValues("processors"),
+			},
+			func(t *testing.T, c *Config) {
+				unpacked := make(map[string]interface{})
+				assert.NoError(t, c.Unpack(unpacked))
+
+				paths, _ := unpacked["paths"]
+				assert.Len(t, paths, 1)
+				assert.Equal(t, []interface{}{"container.log"}, paths)
+
+				processors, _ := unpacked["processors"]
+				assert.Len(t, processors, 2)
+
+				processorNames := make([]string, 2)
+				procs := processors.([]interface{})
+				for i, proc := range procs {
+					for name := range proc.(map[string]interface{}) {
+						processorNames[i] = name
+					}
+				}
+				assert.Equal(t, []string{"add_fields", "add_locale"}, processorNames)
+			},
+		},
+		{
+			"nested replace paths and append processors",
+			[]interface{}{
+				[]interface{}{
+					map[string]interface{}{
+						"paths": []interface{}{
+							"removed_1.log",
+							"removed_2.log",
+							"removed_2.log",
+						},
+						"processors": []interface{}{
+							map[string]interface{}{
+								"add_locale": map[string]interface{}{},
+							},
+						},
+					},
+				},
+				[]interface{}{
+					map[string]interface{}{
+						"paths": []interface{}{
+							"container.log",
+						},
+						"processors": []interface{}{
+							map[string]interface{}{
+								"add_fields": map[string]interface{}{
+									"foo": "bar",
+								},
+							},
+						},
+					},
+				},
+			},
+			[]Option{
+				PathSep("."),
+				FieldReplaceValues("*.paths"),
+				FieldAppendValues("*.processors"),
+			},
+			func(t *testing.T, c *Config) {
+				var unpacked []interface{}
+				assert.NoError(t, c.Unpack(&unpacked))
+
+				nested := unpacked[0].(map[string]interface{})
+				paths, _ := nested["paths"]
+				assert.Len(t, paths, 1)
+				assert.Equal(t, []interface{}{"container.log"}, paths)
+
+				processors, _ := nested["processors"]
+				assert.Len(t, processors, 2)
+
+				processorNames := make([]string, 2)
+				procs := processors.([]interface{})
+				for i, proc := range procs {
+					for name := range proc.(map[string]interface{}) {
+						processorNames[i] = name
+					}
+				}
+				assert.Equal(t, []string{"add_locale", "add_fields"}, processorNames)
+			},
+		},
+		{
+			"deep unknown nested replace paths and append processors",
+			[]interface{}{
+				[]interface{}{
+					map[string]interface{}{
+						"deep": []interface{}{
+							map[string]interface{}{
+								"paths": []interface{}{
+									"removed_1.log",
+									"removed_2.log",
+									"removed_2.log",
+								},
+								"processors": []interface{}{
+									map[string]interface{}{
+										"add_locale": map[string]interface{}{},
+									},
+								},
+							},
+						},
+					},
+				},
+				[]interface{}{
+					map[string]interface{}{
+						"deep": []interface{}{
+							map[string]interface{}{
+								"paths": []interface{}{
+									"container.log",
+								},
+								"processors": []interface{}{
+									map[string]interface{}{
+										"add_fields": map[string]interface{}{
+											"foo": "bar",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			[]Option{
+				PathSep("."),
+				FieldReplaceValues("**.paths"),
+				FieldAppendValues("**.processors"),
+			},
+			func(t *testing.T, c *Config) {
+				var unpacked []interface{}
+				assert.NoError(t, c.Unpack(&unpacked))
+
+				level0 := unpacked[0].(map[string]interface{})
+				deep, _ := level0["deep"].([]interface{})
+				nested := deep[0].(map[string]interface{})
+				paths, _ := nested["paths"]
+				assert.Len(t, paths, 1)
+				assert.Equal(t, []interface{}{"container.log"}, paths)
+
+				processors, _ := nested["processors"]
+				assert.Len(t, processors, 2)
+
+				processorNames := make([]string, 2)
+				procs := processors.([]interface{})
+				for i, proc := range procs {
+					for name := range proc.(map[string]interface{}) {
+						processorNames[i] = name
+					}
+				}
+				assert.Equal(t, []string{"add_locale", "add_fields"}, processorNames)
+			},
+		},
+		{
+			"replace paths and append processors using depth selector (but fields are at level0)",
+			[]interface{}{
+				map[string]interface{}{
+					"paths": []interface{}{
+						"removed_1.log",
+						"removed_2.log",
+						"removed_2.log",
+					},
+					"processors": []interface{}{
+						map[string]interface{}{
+							"add_locale": map[string]interface{}{},
+						},
+					},
+				},
+				map[string]interface{}{
+					"paths": []interface{}{
+						"container.log",
+					},
+					"processors": []interface{}{
+						map[string]interface{}{
+							"add_fields": map[string]interface{}{
+								"foo": "bar",
+							},
+						},
+					},
+				},
+			},
+			[]Option{
+				PathSep("."),
+				FieldReplaceValues("**.paths"),
+				FieldAppendValues("**.processors"),
+			},
+			func(t *testing.T, c *Config) {
+				unpacked := make(map[string]interface{})
+				assert.NoError(t, c.Unpack(unpacked))
+
+				paths, _ := unpacked["paths"]
+				assert.Len(t, paths, 1)
+				assert.Equal(t, []interface{}{"container.log"}, paths)
+
+				processors, _ := unpacked["processors"]
+				assert.Len(t, processors, 2)
+
+				processorNames := make([]string, 2)
+				procs := processors.([]interface{})
+				for i, proc := range procs {
+					for name := range proc.(map[string]interface{}) {
+						processorNames[i] = name
+					}
+				}
+				assert.Equal(t, []string{"add_locale", "add_fields"}, processorNames)
+			},
+		},
+		{
+			"adjust merging based on indexes",
+			[]interface{}{
+				map[string]interface{}{
+					"processors": []interface{}{
+						map[string]interface{}{
+							"add_locale": map[string]interface{}{},
+						},
+						map[string]interface{}{
+							"add_fields": map[string]interface{}{
+								"foo": "bar",
+							},
+						},
+						map[string]interface{}{
+							"add_tags": map[string]interface{}{
+								"tags": []string{"merged"},
+							},
+						},
+					},
+				},
+				map[string]interface{}{
+					"processors": []interface{}{
+						map[string]interface{}{
+							"add_locale": map[string]interface{}{},
+						},
+						map[string]interface{}{
+							"add_fields": map[string]interface{}{
+								"replace": "no-bar",
+							},
+						},
+						map[string]interface{}{
+							"add_tags": map[string]interface{}{
+								"tags": []string{"together"},
+							},
+						},
+					},
+				},
+			},
+			[]Option{
+				PathSep("."),
+				FieldReplaceValues("processors.1"),
+				FieldAppendValues("processors.2.add_tags.tags"),
+			},
+			func(t *testing.T, c *Config) {
+				unpacked := make(map[string]interface{})
+				assert.NoError(t, c.Unpack(unpacked))
+
+				processors, _ := unpacked["processors"]
+				assert.Len(t, processors, 3)
+
+				processorsByAction := make(map[string]interface{})
+				procs := processors.([]interface{})
+				for _, proc := range procs {
+					for name, val := range proc.(map[string]interface{}) {
+						processorsByAction[name] = val
+					}
+				}
+
+				addFieldsAction, ok := processorsByAction["add_fields"]
+				assert.True(t, ok)
+				assert.Equal(t, map[string]interface{}{"replace": "no-bar"}, addFieldsAction)
+
+				addTagsAction, ok := processorsByAction["add_tags"]
+				assert.True(t, ok)
+				tags, ok := (addTagsAction.(map[string]interface{}))["tags"]
+				assert.True(t, ok)
+				assert.Equal(t, []interface{}{"merged", "together"}, tags)
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.Name, func(t *testing.T) {
+			c := New()
+			for _, config := range test.Configs {
+				assert.NoError(t, c.Merge(config, test.Options...))
+			}
+			test.Assert(t, c)
+		})
+	}
+}
+
 func TestMergeSquash(t *testing.T) {
 	type SubType struct{ B bool }
 	type SubInterface struct{ B interface{} }
@@ -549,6 +1055,7 @@ func TestMergeSpliced(t *testing.T) {
 			"obj":     "{f1: ${one}, f2: ${two}}",
 			"strings": "${l},${s}",
 			"empty":   "",
+			"escaped": "$${escaped}",
 		},
 	}
 
@@ -591,6 +1098,9 @@ func TestMergeSpliced(t *testing.T) {
 	e, err := c.String("sub.empty", -1, PathSep("."))
 	assert.NoError(t, err)
 
+	escaped, err := c.String("sub.escaped", -1, PathSep("."))
+	assert.NoError(t, err)
+
 	assert.Equal(t, true, b)
 	assert.Equal(t, 42, int(i))
 	assert.Equal(t, 23, int(u))
@@ -603,6 +1113,7 @@ func TestMergeSpliced(t *testing.T) {
 	assert.Equal(t, "lazy", s0)
 	assert.Equal(t, "str", s1)
 	assert.Equal(t, "", e)
+	assert.Equal(t, "${escaped}", escaped)
 }
 
 func TestMergeVarExp(t *testing.T) {
@@ -714,7 +1225,7 @@ func TestMergeRegex(t *testing.T) {
 			continue
 		}
 
-		assert.Equal(t, regex, check.Regex)
+		assert.Equal(t, regex.String(), check.Regex.String())
 	}
 }
 
@@ -931,5 +1442,123 @@ func TestMergeNil(t *testing.T) {
 		}
 
 		assert.Equal(t, 42, int(i))
+	}
+}
+
+func TestMergeGlobalArrConfig(t *testing.T) {
+	type testCase struct {
+		options  []Option
+		in       []interface{}
+		expected interface{}
+	}
+
+	cases := map[string]testCase{
+		"merge array values": testCase{
+			in: []interface{}{
+				map[string]interface{}{
+					"a": []interface{}{
+						map[string]interface{}{"b": 1},
+					},
+				},
+				map[string]interface{}{
+					"a": []interface{}{
+						map[string]interface{}{"c": 2},
+						map[string]interface{}{"d": 3},
+					},
+				},
+			},
+			expected: map[string]interface{}{
+				"a": []interface{}{
+					map[string]interface{}{"b": uint64(1), "c": uint64(2)},
+					map[string]interface{}{"d": uint64(3)},
+				},
+			},
+		},
+
+		"replace array values": testCase{
+			options: []Option{ReplaceValues},
+			in: []interface{}{
+				map[string]interface{}{
+					"a": []interface{}{
+						map[string]interface{}{"b": 1},
+					},
+				},
+				map[string]interface{}{
+					"a": []interface{}{
+						map[string]interface{}{"c": 2},
+						map[string]interface{}{"d": 3},
+					},
+				},
+			},
+			expected: map[string]interface{}{
+				"a": []interface{}{
+					map[string]interface{}{"c": uint64(2)},
+					map[string]interface{}{"d": uint64(3)},
+				},
+			},
+		},
+
+		"append array values": testCase{
+			options: []Option{AppendValues},
+			in: []interface{}{
+				map[string]interface{}{
+					"a": []interface{}{
+						map[string]interface{}{"b": 1},
+					},
+				},
+				map[string]interface{}{
+					"a": []interface{}{
+						map[string]interface{}{"c": 2},
+						map[string]interface{}{"d": 3},
+					},
+				},
+			},
+			expected: map[string]interface{}{
+				"a": []interface{}{
+					map[string]interface{}{"b": uint64(1)},
+					map[string]interface{}{"c": uint64(2)},
+					map[string]interface{}{"d": uint64(3)},
+				},
+			},
+		},
+
+		"prepend array values": testCase{
+			options: []Option{PrependValues},
+			in: []interface{}{
+				map[string]interface{}{
+					"a": []interface{}{
+						map[string]interface{}{"b": 1},
+					},
+				},
+				map[string]interface{}{
+					"a": []interface{}{
+						map[string]interface{}{"c": 2},
+						map[string]interface{}{"d": 3},
+					},
+				},
+			},
+			expected: map[string]interface{}{
+				"a": []interface{}{
+					map[string]interface{}{"c": uint64(2)},
+					map[string]interface{}{"d": uint64(3)},
+					map[string]interface{}{"b": uint64(1)},
+				},
+			},
+		},
+	}
+
+	for name, test := range cases {
+		test := test
+		t.Run(name, func(t *testing.T) {
+			cfg := New()
+			for _, in := range test.in {
+				err := cfg.Merge(in, test.options...)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			assertConfig(t, cfg, test.expected)
+		})
 	}
 }

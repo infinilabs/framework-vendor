@@ -1,8 +1,26 @@
+// Licensed to Elasticsearch B.V. under one or more contributor
+// license agreements. See the NOTICE file distributed with
+// this work for additional information regarding copyright
+// ownership. Elasticsearch B.V. licenses this file to you under
+// the Apache License, Version 2.0 (the "License"); you may
+// not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
 package ucfg
 
 import (
 	"testing"
 
+	"github.com/elastic/go-ucfg/parse"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -98,6 +116,7 @@ func TestUnpackPrimitivesValuesResolve(t *testing.T) {
 			U uint
 			F float64
 			S string
+			W string
 		}{},
 		&struct {
 			B interface{}
@@ -105,6 +124,7 @@ func TestUnpackPrimitivesValuesResolve(t *testing.T) {
 			U interface{}
 			F interface{}
 			S interface{}
+			W interface{}
 		}{},
 		&struct {
 			B *bool
@@ -112,19 +132,21 @@ func TestUnpackPrimitivesValuesResolve(t *testing.T) {
 			U *uint
 			F *float64
 			S *string
+			W *string
 		}{},
 	}
 
 	cfgOpts := []Option{
 		VarExp,
-		Resolve(func(name string) (string, error) {
+		Resolve(func(name string) (string, parse.Config, error) {
 			return map[string]string{
 				"v_b": "true",
 				"v_i": "42",
 				"v_u": "23",
 				"v_f": "3.14",
 				"v_s": "string",
-			}[name], nil
+				"v_w": "{string}",
+			}[name], parse.EnvConfig, nil
 		}),
 	}
 
@@ -134,6 +156,7 @@ func TestUnpackPrimitivesValuesResolve(t *testing.T) {
 		"u": "${v_u}",
 		"f": "${v_f}",
 		"s": "${v_s}",
+		"w": "${v_w}",
 	}, cfgOpts...)
 
 	for i, out := range tests {
@@ -169,11 +192,15 @@ func TestUnpackPrimitivesValuesResolve(t *testing.T) {
 		s, err := c.String("s", -1, cfgOpts...)
 		assert.NoError(t, err)
 
+		w, err := c.String("w", -1, cfgOpts...)
+		assert.NoError(t, err)
+
 		assert.Equal(t, true, b)
 		assert.Equal(t, 42, int(i))
 		assert.Equal(t, 23, int(u))
 		assert.Equal(t, 3.14, f)
 		assert.Equal(t, "string", s)
+		assert.Equal(t, "{string}", w)
 	}
 }
 
@@ -578,4 +605,306 @@ func TestUnpackUnknownNested(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, "test", s)
 	}
+}
+
+func TestUnpackStructWithConfig(t *testing.T) {
+	type target struct {
+		to     interface{}
+		config **Config
+	}
+
+	type testCase struct {
+		target   target
+		config   interface{}
+		expected interface{}
+	}
+
+	cases := map[string]testCase{
+		"merge config by default": testCase{
+			target: func() target {
+				to := struct{ Config *Config }{}
+				to.Config = MustNewFrom(map[string]interface{}{"a": 1})
+				return target{&to, &to.Config}
+			}(),
+
+			config: map[string]interface{}{
+				"config": map[string]interface{}{"b": 2},
+			},
+
+			expected: map[string]interface{}{
+				"a": uint64(1),
+				"b": uint64(2),
+			},
+		},
+
+		"replace config": testCase{
+			target: func() target {
+				to := struct {
+					Config *Config `config:",replace"`
+				}{}
+				to.Config = MustNewFrom(map[string]interface{}{"a": 1})
+				return target{&to, &to.Config}
+			}(),
+
+			config: map[string]interface{}{
+				"config": map[string]interface{}{"b": 2},
+			},
+
+			expected: map[string]interface{}{
+				"b": uint64(2),
+			},
+		},
+
+		"merge array by default": testCase{
+			target: func() target {
+				to := struct{ Config *Config }{}
+				to.Config = MustNewFrom([]interface{}{
+					map[string]interface{}{"a": 1},
+				})
+				return target{&to, &to.Config}
+			}(),
+
+			config: map[string]interface{}{
+				"config": []interface{}{
+					map[string]interface{}{"b": 2},
+				},
+			},
+
+			expected: []map[string]interface{}{
+				{"a": uint64(1), "b": uint64(2)},
+			},
+		},
+
+		"replace array": testCase{
+			target: func() target {
+				to := struct {
+					Config *Config `config:",replace"`
+				}{}
+				to.Config = MustNewFrom([]interface{}{
+					map[string]interface{}{"a": 1},
+					map[string]interface{}{"c": 1},
+				})
+				return target{&to, &to.Config}
+			}(),
+
+			config: map[string]interface{}{
+				"config": []interface{}{
+					map[string]interface{}{
+						"b": 2,
+					},
+				},
+			},
+
+			expected: []map[string]interface{}{
+				{"b": uint64(2)},
+			},
+		},
+
+		"append array": testCase{
+			target: func() target {
+				to := struct {
+					Config *Config `config:",append"`
+				}{}
+				to.Config = MustNewFrom([]interface{}{
+					map[string]interface{}{"a": 1},
+				})
+				return target{&to, &to.Config}
+			}(),
+
+			config: map[string]interface{}{
+				"config": []interface{}{
+					map[string]interface{}{"b": 2},
+				},
+			},
+
+			expected: []map[string]interface{}{
+				{"a": uint64(1)},
+				{"b": uint64(2)},
+			},
+		},
+
+		"prepend array": testCase{
+			target: func() target {
+				to := struct {
+					Config *Config `config:",prepend"`
+				}{}
+				to.Config = MustNewFrom([]interface{}{
+					map[string]interface{}{"a": 1},
+				})
+				return target{&to, &to.Config}
+			}(),
+
+			config: map[string]interface{}{
+				"config": []interface{}{
+					map[string]interface{}{"b": 2},
+				},
+			},
+
+			expected: []map[string]interface{}{
+				{"b": uint64(2)},
+				{"a": uint64(1)},
+			},
+		},
+	}
+
+	for name, test := range cases {
+		test := test
+		t.Run(name, func(t *testing.T) {
+			config := MustNewFrom(test.config)
+			if assert.NoError(t, config.Unpack(test.target.to)) {
+				assertConfig(t, *test.target.config, test.expected)
+			}
+		})
+	}
+}
+
+func TestUnpackStructWithArrConfig(t *testing.T) {
+	type target struct {
+		to     interface{}
+		config *[]*Config
+	}
+
+	type testCase struct {
+		target   target
+		config   interface{}
+		expected interface{}
+	}
+
+	cases := map[string]testCase{
+		"merge entries by default": testCase{
+			target: func() target {
+				to := struct{ Configs []*Config }{}
+				to.Configs = []*Config{
+					MustNewFrom(map[string]interface{}{"a": 1}),
+					MustNewFrom(map[string]interface{}{"c": 3}),
+				}
+				return target{&to, &to.Configs}
+			}(),
+
+			config: map[string]interface{}{
+				"configs": []interface{}{
+					map[string]interface{}{"b": 2},
+				},
+			},
+
+			expected: []map[string]interface{}{
+				{"a": uint64(1), "b": uint64(2)},
+				{"c": uint64(3)},
+			},
+		},
+
+		"replace array": testCase{
+			target: func() target {
+				to := struct {
+					Configs []*Config `config:",replace"`
+				}{}
+				to.Configs = []*Config{
+					MustNewFrom(map[string]interface{}{"a": 1}),
+					MustNewFrom(map[string]interface{}{"c": 3}),
+				}
+				return target{&to, &to.Configs}
+			}(),
+
+			config: map[string]interface{}{
+				"configs": []interface{}{
+					map[string]interface{}{"b": 2},
+				},
+			},
+
+			expected: []map[string]interface{}{
+				{"b": uint64(2)},
+			},
+		},
+
+		"append": testCase{
+			target: func() target {
+				to := struct {
+					Configs []*Config `config:",append"`
+				}{}
+				to.Configs = []*Config{
+					MustNewFrom(map[string]interface{}{"a": 1}),
+					MustNewFrom(map[string]interface{}{"c": 3}),
+				}
+				return target{&to, &to.Configs}
+			}(),
+
+			config: map[string]interface{}{
+				"configs": []interface{}{
+					map[string]interface{}{"b": 2},
+				},
+			},
+
+			expected: []map[string]interface{}{
+				{"a": uint64(1)},
+				{"c": uint64(3)},
+				{"b": uint64(2)},
+			},
+		},
+
+		"prepend": testCase{
+			target: func() target {
+				to := struct {
+					Configs []*Config `config:",prepend"`
+				}{}
+				to.Configs = []*Config{
+					MustNewFrom(map[string]interface{}{"a": 1}),
+					MustNewFrom(map[string]interface{}{"c": 3}),
+				}
+				return target{&to, &to.Configs}
+			}(),
+
+			config: map[string]interface{}{
+				"configs": []interface{}{
+					map[string]interface{}{"b": 2},
+				},
+			},
+
+			expected: []map[string]interface{}{
+				{"b": uint64(2)},
+				{"a": uint64(1)},
+				{"c": uint64(3)},
+			},
+		},
+	}
+
+	for name, test := range cases {
+		test := test
+		t.Run(name, func(t *testing.T) {
+			config := MustNewFrom(test.config)
+			err := config.Unpack(test.target.to)
+			if assert.NoError(t, err) {
+				tmp := New()
+				for i, sub := range *test.target.config {
+					if sub == nil {
+						t.Fatalf("array %v entry is nil", i)
+					}
+					tmp.SetChild("", i, sub)
+				}
+
+				assertConfig(t, tmp, test.expected)
+			}
+		})
+	}
+}
+
+func assertConfig(t *testing.T, config *Config, expected interface{}) {
+	var actual interface{}
+
+	if config.IsArray() {
+		var tmp []map[string]interface{}
+		err := config.Unpack(&tmp)
+		if !assert.NoError(t, err) {
+			return
+		}
+		actual = tmp
+	} else {
+		var tmp map[string]interface{}
+		err := config.Unpack(&tmp)
+		if !assert.NoError(t, err) {
+			return
+		}
+		actual = tmp
+	}
+
+	assert.Equal(t, expected, actual)
 }

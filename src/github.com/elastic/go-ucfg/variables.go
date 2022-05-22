@@ -1,3 +1,20 @@
+// Licensed to Elasticsearch B.V. under one or more contributor
+// license agreements. See the NOTICE file distributed with
+// this work for additional information regarding copyright
+// ownership. Elasticsearch B.V. licenses this file to you under
+// the Apache License, Version 2.0 (the "License"); you may
+// not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
 package ucfg
 
 import (
@@ -5,6 +22,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/elastic/go-ucfg/parse"
 )
 
 type reference struct {
@@ -89,7 +108,12 @@ func (r *reference) String() string {
 
 func (r *reference) resolveRef(cfg *Config, opts *options) (value, error) {
 	env := opts.env
-	var err error
+
+	if ok := opts.activeFields.AddNew(r.Path.String()); !ok {
+		return nil, raiseCyclicErr(r.Path.String())
+	}
+
+	var err Error
 
 	for {
 		var v value
@@ -103,6 +127,7 @@ func (r *reference) resolveRef(cfg *Config, opts *options) (value, error) {
 			if v == nil {
 				break
 			}
+
 			return v, nil
 		}
 
@@ -117,33 +142,46 @@ func (r *reference) resolveRef(cfg *Config, opts *options) (value, error) {
 	return nil, err
 }
 
-func (r *reference) resolveEnv(cfg *Config, opts *options) (string, error) {
+func (r *reference) resolveEnv(cfg *Config, opts *options) (string, parse.Config, error) {
 	var err error
 
 	if len(opts.resolvers) > 0 {
 		key := r.Path.String()
 		for i := len(opts.resolvers) - 1; i >= 0; i-- {
 			var v string
+			var cfg parse.Config
 			resolver := opts.resolvers[i]
-			v, err = resolver(key)
+			v, cfg, err = resolver(key)
 			if err == nil {
-				return v, nil
+				return v, cfg, nil
 			}
 		}
 	}
 
-	return "", err
+	return "", parse.DefaultConfig, err
 }
 
 func (r *reference) resolve(cfg *Config, opts *options) (value, error) {
 	v, err := r.resolveRef(cfg, opts)
-	if v != nil || err != nil {
+	if v != nil || criticalResolveError(err) {
 		return v, err
 	}
 
-	s, err := r.resolveEnv(cfg, opts)
-	if s == "" || err != nil {
+	previousErr := err
+
+	s, _, err := r.resolveEnv(cfg, opts)
+	if err != nil {
+		// TODO(ph): Not everything is an Error, will do some cleanup in another PR.
+		if v, ok := previousErr.(Error); ok {
+			if v.Reason() == ErrCyclicReference {
+				return nil, previousErr
+			}
+		}
 		return nil, err
+	}
+
+	if s == "" {
+		return nil, nil
 	}
 
 	return newString(context{field: r.Path.String()}, nil, s), nil
@@ -394,8 +432,10 @@ func lexer(in string) (<-chan token, <-chan error) {
 					lex <- openToken
 					off++
 					varcount++
-				default: // escape any symbol
+				case '$', '}': // escape $} and $$
 					content = content[:idx] + content[off:]
+					continue
+				default:
 					continue
 				}
 			}

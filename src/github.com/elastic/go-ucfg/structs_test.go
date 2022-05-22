@@ -1,3 +1,20 @@
+// Licensed to Elasticsearch B.V. under one or more contributor
+// license agreements. See the NOTICE file distributed with
+// this work for additional information regarding copyright
+// ownership. Elasticsearch B.V. licenses this file to you under
+// the Apache License, Version 2.0 (the "License"); you may
+// not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
 package ucfg
 
 import (
@@ -5,6 +22,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/elastic/go-ucfg/parse"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -50,7 +68,6 @@ func TestStructMergeUnpackTyped(t *testing.T) {
 			},
 			env: testEnv{"env_strings": "one"},
 		},
-
 		{
 			t: &struct {
 				Hosts []string
@@ -61,6 +78,17 @@ func TestStructMergeUnpackTyped(t *testing.T) {
 				"hosts": "${hosts_from_env}",
 			},
 			env: testEnv{"hosts_from_env": "host1:1234,host2:4567"},
+		},
+		{
+			t: &struct {
+				Hosts []string
+			}{
+				Hosts: []string{"{host1}:1234", "host2:4567"},
+			},
+			cfg: map[string]interface{}{
+				"hosts": "${hosts_from_env}",
+			},
+			env: testEnv{"hosts_from_env": "{host1}:1234,host2:4567"},
 		},
 		{
 			t: &struct {
@@ -190,16 +218,16 @@ func TestIgnoreStructFields(t *testing.T) {
 }
 
 func resolveTestEnv(e testEnv) Option {
-	fail := func(name string) (string, error) {
-		return "", fmt.Errorf("empty environment variable %v", name)
+	fail := func(name string) (string, parse.Config, error) {
+		return "", parse.EnvConfig, fmt.Errorf("empty environment variable %v", name)
 	}
 
 	if e == nil {
 		return Resolve(fail)
 	}
-	return Resolve(func(name string) (string, error) {
+	return Resolve(func(name string) (string, parse.Config, error) {
 		if v := e[name]; v != "" {
-			return v, nil
+			return v, parse.EnvConfig, nil
 		}
 		return fail(name)
 	})

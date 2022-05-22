@@ -1,3 +1,20 @@
+// Licensed to Elasticsearch B.V. under one or more contributor
+// license agreements. See the NOTICE file distributed with
+// this work for additional information regarding copyright
+// ownership. Elasticsearch B.V. licenses this file to you under
+// the Apache License, Version 2.0 (the "License"); you may
+// not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
 package parse
 
 import (
@@ -8,8 +25,49 @@ import (
 	"unicode"
 )
 
+// Config allows enabling and disabling parser features.
+type Config struct {
+	// Enables parsing arrays from values enclosed in [].
+	Array bool
+	// Enables parsing objects enclosed in {}.
+	Object bool
+	// Enables parsing double quoted strings, where values are escaped.
+	StringDQuote bool
+	// Enables parsing single quotes strings, where no values are escaped.
+	StringSQuote bool
+	// Enables ignoring commas as a shortcut for building arrays: a,b parses to [a,b].
+	// The comma array syntax is enabled by default for backwards compatibility.
+	IgnoreCommas bool
+}
+
+// DefaultConfig is the default config with all parser features enabled.
+var DefaultConfig = Config{
+	Array:        true,
+	Object:       true,
+	StringDQuote: true,
+	StringSQuote: true,
+}
+
+// EnvConfig is configuration for parser when the value comes from environmental variable.
+var EnvConfig = Config{
+	Array:        true,
+	Object:       false,
+	StringDQuote: true,
+	StringSQuote: true,
+}
+
+// NoopConfig is configuration for parser that disables all options.
+var NoopConfig = Config{
+	Array:        false,
+	Object:       false,
+	StringDQuote: false,
+	StringSQuote: false,
+	IgnoreCommas: true,
+}
+
 type flagParser struct {
 	input string
+	cfg   Config
 }
 
 // stopSet definitions for handling unquoted strings
@@ -25,17 +83,38 @@ const (
 //
 // The parser implements a superset of JSON, but only a subset of YAML by
 // allowing for arrays and objects having a trailing comma. In addition 3
-// strings types are supported:
+// string types are supported:
 //
 // 1. single quoted string (no unescaping of any characters)
 // 2. double quoted strings (characters are escaped)
-// 3. strings without quotes. String parsing stops in
+// 3. strings without quotes. String parsing stops at
 //   special characters like '[]{},:'
 //
 // In addition, top-level values can be separated by ',' to build arrays
 // without having to use [].
 func Value(content string) (interface{}, error) {
-	p := &flagParser{strings.TrimSpace(content)}
+	return ValueWithConfig(content, DefaultConfig)
+}
+
+// ValueWithConfig parses command line arguments, supporting
+// boolean, numbers, strings, arrays, objects when enabled.
+//
+// The parser implements a superset of JSON, but only a subset of YAML by
+// allowing for arrays and objects having a trailing comma. In addition 3
+// string types are supported:
+//
+// 1. single quoted string (no unescaping of any characters)
+// 2. double quoted strings (characters are escaped)
+// 3. strings without quotes. String parsing stops at
+//   special characters like '[]{},:'
+//
+// In addition, top-level values can be separated by ',' to build arrays
+// without having to use [].
+func ValueWithConfig(content string, cfg Config) (interface{}, error) {
+	p := &flagParser{strings.TrimSpace(content), cfg}
+	if err := p.validateConfig(); err != nil {
+		return nil, err
+	}
 	v, err := p.parse()
 	if err != nil {
 		return nil, fmt.Errorf("%v when parsing '%v'", err.Error(), content)
@@ -43,11 +122,24 @@ func Value(content string) (interface{}, error) {
 	return v, nil
 }
 
+func (p *flagParser) validateConfig() error {
+	if !p.cfg.Array && p.cfg.Object {
+		return fmt.Errorf("cfg.Array cannot be disabled when cfg.Object is enabled")
+	}
+	return nil
+}
+
 func (p *flagParser) parse() (interface{}, error) {
 	var values []interface{}
 
 	for {
-		v, err := p.parseValue(toplevelStopSet)
+		// Enable building arrays when commas separate top level elements by default.
+		stopSet := toplevelStopSet
+		if p.cfg.IgnoreCommas {
+			stopSet = ""
+		}
+
+		v, err := p.parseValue(stopSet)
 		if err != nil {
 			return nil, err
 		}
@@ -82,13 +174,25 @@ func (p *flagParser) parseValue(stopSet string) (interface{}, error) {
 
 	switch in[0] {
 	case '[':
-		return p.parseArray()
+		if p.cfg.Array {
+			return p.parseArray()
+		}
+		return p.parsePrimitive(stopSet)
 	case '{':
-		return p.parseObj()
+		if p.cfg.Object {
+			return p.parseObj()
+		}
+		return p.parsePrimitive(stopSet)
 	case '"':
-		return p.parseStringDQuote()
+		if p.cfg.StringDQuote {
+			return p.parseStringDQuote()
+		}
+		return p.parsePrimitive(stopSet)
 	case '\'':
-		return p.parseStringSQuote()
+		if p.cfg.StringSQuote {
+			return p.parseStringSQuote()
+		}
+		return p.parsePrimitive(stopSet)
 	default:
 		return p.parsePrimitive(stopSet)
 	}
