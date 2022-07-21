@@ -117,15 +117,15 @@ func ExecuteFuncStringWithErr(template, startTag, endTag string, f TagFunc) (str
 		return template, nil
 	}
 
-	bb := byteBufferPool.Get()
+	bb := byteBufferPool.Get("template")
 	if _, err := ExecuteFunc(template, startTag, endTag, bb, f); err != nil {
 		bb.Reset()
-		byteBufferPool.Put(bb)
+		byteBufferPool.Put("template",bb)
 		return "", err
 	}
 	s := string(bb.B)
 	bb.Reset()
-	byteBufferPool.Put(bb)
+	byteBufferPool.Put("template",bb)
 	return s, nil
 }
 
@@ -350,15 +350,15 @@ func (t *Template) ExecuteFuncString(f TagFunc) string {
 // This function is optimized for frozen templates.
 // Use ExecuteFuncString for constantly changing templates.
 func (t *Template) ExecuteFuncStringWithErr(f TagFunc) (string, error) {
-	bb := t.byteBufferPool.Get()
+	bb := t.byteBufferPool.Get("template")
 	if _, err := t.ExecuteFunc(bb, f); err != nil {
 		bb.Reset()
-		t.byteBufferPool.Put(bb)
+		t.byteBufferPool.Put("template",bb)
 		return "", err
 	}
 	s := string(bb.Bytes())
 	bb.Reset()
-	t.byteBufferPool.Put(bb)
+	t.byteBufferPool.Put("template",bb)
 	return s, nil
 }
 
