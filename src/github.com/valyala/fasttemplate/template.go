@@ -117,19 +117,17 @@ func ExecuteFuncStringWithErr(template, startTag, endTag string, f TagFunc) (str
 		return template, nil
 	}
 
-	bb := byteBufferPool.Get("template")
+	bb := bytebufferpool.Get("template")
 	if _, err := ExecuteFunc(template, startTag, endTag, bb, f); err != nil {
 		bb.Reset()
-		byteBufferPool.Put("template",bb)
+		bytebufferpool.Put("template",bb)
 		return "", err
 	}
 	s := string(bb.B)
 	bb.Reset()
-	byteBufferPool.Put("template",bb)
+	bytebufferpool.Put("template",bb)
 	return s, nil
 }
-
-var byteBufferPool bytebufferpool.Pool
 
 // ExecuteString substitutes template tags (placeholders) with the corresponding
 // values from the map m and returns the result.
@@ -168,7 +166,6 @@ type Template struct {
 
 	texts          [][]byte
 	tags           []string
-	byteBufferPool bytebufferpool.Pool
 }
 
 // New parses the given template using the given startTag and endTag
@@ -350,15 +347,15 @@ func (t *Template) ExecuteFuncString(f TagFunc) string {
 // This function is optimized for frozen templates.
 // Use ExecuteFuncString for constantly changing templates.
 func (t *Template) ExecuteFuncStringWithErr(f TagFunc) (string, error) {
-	bb := t.byteBufferPool.Get("template")
+	bb := bytebufferpool.Get("template")
 	if _, err := t.ExecuteFunc(bb, f); err != nil {
 		bb.Reset()
-		t.byteBufferPool.Put("template",bb)
+		bytebufferpool.Put("template",bb)
 		return "", err
 	}
 	s := string(bb.Bytes())
 	bb.Reset()
-	t.byteBufferPool.Put("template",bb)
+	bytebufferpool.Put("template",bb)
 	return s, nil
 }
 
