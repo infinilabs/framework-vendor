@@ -29,7 +29,7 @@ import (
 //
 //	// Construct a synchronous writer (the default mode).
 //	w := &kafka.Writer{
-//		Addr:         kafka.TCP("localhost:9092"),
+//		Addr:         Addr: kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
 //		Topic:        "topic-A",
 //		RequiredAcks: kafka.RequireAll,
 //	}
@@ -55,7 +55,7 @@ import (
 // writer to receive notifications of messages being written to kafka:
 //
 //	w := &kafka.Writer{
-//		Addr:         kafka.TCP("localhost:9092"),
+//		Addr:         Addr: kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
 //		Topic:        "topic-A",
 //		RequiredAcks: kafka.RequireAll,
 //		Async:        true, // make the writer asynchronous
@@ -79,14 +79,15 @@ type Writer struct {
 	// Address of the kafka cluster that this writer is configured to send
 	// messages to.
 	//
-	// This feild is required, attempting to write messages to a writer with a
+	// This field is required, attempting to write messages to a writer with a
 	// nil address will error.
 	Addr net.Addr
 
-	// The topic that the writer will produce messages to.
+	// Topic is the name of the topic that the writer will produce messages to.
 	//
-	// This field is required, attempting to write messages to a writer with no
-	// topic will error.
+	// Setting this field or not is a mutually exclusive option. If you set Topic
+	// here, you must not set Topic for any produced Message. Otherwise, if you	do
+	// not set Topic, every Message must have Topic specified.
 	Topic string
 
 	// The balancer used to distribute messages across partitions.
@@ -134,12 +135,15 @@ type Writer struct {
 	//  RequireOne  (1)  wait for the leader to acknowledge the writes
 	//  RequireAll  (-1) wait for the full ISR to acknowledge the writes
 	//
+	// Defaults to RequireNone.
 	RequiredAcks RequiredAcks
 
 	// Setting this flag to true causes the WriteMessages method to never block.
 	// It also means that errors are ignored since the caller will not receive
 	// the returned value. Use this only if you don't care about guarantees of
 	// whether the messages were written to kafka.
+	//
+	// Defaults to false.
 	Async bool
 
 	// An optional function called when the writer succeeds or fails the
@@ -181,13 +185,14 @@ type Writer struct {
 	// If nil, DefaultTransport is used.
 	Transport RoundTripper
 
-	// Atomic flag indicating whether the writer has been closed.
-	closed uint32
-	group  sync.WaitGroup
+	// AllowAutoTopicCreation notifies writer to create topic if missing.
+	AllowAutoTopicCreation bool
 
-	// Manages the current batch being aggregated on the writer.
+	// Manages the current set of partition-topic writers.
+	group   sync.WaitGroup
 	mutex   sync.Mutex
-	batches map[int32]*writeBatch
+	closed  bool
+	writers map[topicPartition]*partitionWriter
 
 	// writer stats are all made of atomic values, no need for synchronization.
 	// Use a pointer to ensure 64-bit alignment of the values. The once value is
@@ -220,8 +225,9 @@ type WriterConfig struct {
 
 	// The topic that the writer will produce messages to.
 	//
-	// This field is required, attempting to create a writer with an empty topic
-	// will panic.
+	// If provided, this will be used to set the topic for all produced messages.
+	// If not provided, each Message must specify a topic for itself. This must be
+	// mutually exclusive, otherwise the Writer will return an error.
 	Topic string
 
 	// The dialer used by the writer to establish connections to the kafka
@@ -280,14 +286,19 @@ type WriterConfig struct {
 	// transport.
 	RebalanceInterval time.Duration
 
-	// DEPRECACTED: in versions prior to 0.4, the writer used to manage connections
+	// DEPRECATED: in versions prior to 0.4, the writer used to manage connections
 	// to the kafka cluster directly. With the change to use a transport to manage
 	// connections, the writer has no connections to manage directly anymore.
 	IdleConnTimeout time.Duration
 
 	// Number of acknowledges from partition replicas required before receiving
-	// a response to a produce request (default to -1, which means to wait for
-	// all replicas).
+	// a response to a produce request. The default is -1, which means to wait for
+	// all replicas, and a value above 0 is required to indicate how many replicas
+	// should acknowledge a message to be considered successful.
+	//
+	// This version of kafka-go (v0.3) does not support 0 required acks, due to
+	// some internal complexity implementing this with the Kafka protocol. If you
+	// need that functionality specifically, you'll need to upgrade to v0.4.
 	RequiredAcks int
 
 	// Setting this flag to true causes the WriteMessages method to never block.
@@ -308,13 +319,15 @@ type WriterConfig struct {
 	ErrorLogger Logger
 }
 
+type topicPartition struct {
+	topic     string
+	partition int32
+}
+
 // Validate method validates WriterConfig properties.
 func (config *WriterConfig) Validate() error {
 	if len(config.Brokers) == 0 {
 		return errors.New("cannot create a kafka writer with an empty list of brokers")
-	}
-	if len(config.Topic) == 0 {
-		return errors.New("cannot create a kafka writer with an empty topic")
 	}
 	return nil
 }
@@ -396,6 +409,10 @@ func NewWriter(config WriterConfig) *Writer {
 		config.Dialer = DefaultDialer
 	}
 
+	if config.Balancer == nil {
+		config.Balancer = &RoundRobin{}
+	}
+
 	// Converts the pre-0.4 Dialer API into a Transport.
 	kafkaDialer := DefaultDialer
 	if config.Dialer != nil {
@@ -421,25 +438,15 @@ func NewWriter(config WriterConfig) *Writer {
 	stats := new(writerStats)
 	// For backward compatibility with the pre-0.4 APIs, support custom
 	// resolvers by wrapping the dial function.
-	dial := func(ctx context.Context, network, address string) (net.Conn, error) {
+	dial := func(ctx context.Context, network, addr string) (net.Conn, error) {
 		start := time.Now()
 		defer func() {
 			stats.dials.observe(1)
 			stats.dialTime.observe(int64(time.Since(start)))
 		}()
-		if resolver != nil {
-			host, port := splitHostPort(address)
-			addrs, err := resolver.LookupHost(ctx, host)
-			if err != nil {
-				return nil, err
-			}
-			if len(addrs) != 0 {
-				address = addrs[0]
-			}
-			if len(port) != 0 {
-				address, _ = splitHostPort(address)
-				address = net.JoinHostPort(address, port)
-			}
+		address, err := lookupHost(ctx, addr, resolver)
+		if err != nil {
+			return nil, err
 		}
 		return dialer.DialContext(ctx, network, address)
 	}
@@ -472,6 +479,7 @@ func NewWriter(config WriterConfig) *Writer {
 		Topic:        config.Topic,
 		MaxAttempts:  config.MaxAttempts,
 		BatchSize:    config.BatchSize,
+		Balancer:     config.Balancer,
 		BatchBytes:   int64(config.BatchBytes),
 		BatchTimeout: config.BatchTimeout,
 		ReadTimeout:  config.ReadTimeout,
@@ -498,21 +506,55 @@ func NewWriter(config WriterConfig) *Writer {
 	return w
 }
 
+// enter is called by WriteMessages to indicate that a new inflight operation
+// has started, which helps synchronize with Close and ensure that the method
+// does not return until all inflight operations were completed.
+func (w *Writer) enter() bool {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+	if w.closed {
+		return false
+	}
+	w.group.Add(1)
+	return true
+}
+
+// leave is called by WriteMessages to indicate that the inflight operation has
+// completed.
+func (w *Writer) leave() { w.group.Done() }
+
+// spawn starts an new asynchronous operation on the writer. This method is used
+// instead of starting goroutines inline to help manage the state of the
+// writer's wait group. The wait group is used to block Close calls until all
+// inflight operations have completed, therefore automatically including those
+// started with calls to spawn.
+func (w *Writer) spawn(f func()) {
+	w.group.Add(1)
+	go func() {
+		defer w.group.Done()
+		f()
+	}()
+}
+
 // Close flushes pending writes, and waits for all writes to complete before
 // returning. Calling Close also prevents new writes from being submitted to
 // the writer, further calls to WriteMessages and the like will fail with
 // io.ErrClosedPipe.
 func (w *Writer) Close() error {
-	w.markClosed()
-	// If batches are pending, trigger them so messages get sent.
 	w.mutex.Lock()
+	// Marking the writer as closed here causes future calls to WriteMessages to
+	// fail with io.ErrClosedPipe. Mutation of this field is synchronized on the
+	// writer's mutex to ensure that no more increments of the wait group are
+	// performed afterwards (which could otherwise race with the Wait below).
+	w.closed = true
 
-	for _, batch := range w.batches {
-		batch.trigger()
+	// close all writers to trigger any pending batches
+	for _, writer := range w.writers {
+		writer.close()
 	}
 
-	for partition := range w.batches {
-		delete(w.batches, partition)
+	for partition := range w.writers {
+		delete(w.writers, partition)
 	}
 
 	w.mutex.Unlock()
@@ -554,16 +596,10 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		return errors.New("kafka.(*Writer).WriteMessages: cannot create a kafka writer with a nil address")
 	}
 
-	if w.Topic == "" {
-		return errors.New("kafka.(*Writer).WriteMessages: cannot create a kafka writer with an empty topic")
-	}
-
-	w.group.Add(1)
-	defer w.group.Done()
-
-	if w.isClosed() {
+	if !w.enter() {
 		return io.ErrClosedPipe
 	}
+	defer w.leave()
 
 	if len(msgs) == 0 {
 		return nil
@@ -584,22 +620,32 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		}
 	}
 
-	numPartitions, err := w.partitions(ctx)
-	if err != nil {
-		return err
-	}
-
 	// We use int32 here to half the memory footprint (compared to using int
 	// on 64 bits architectures). We map lists of the message indexes instead
 	// of the message values for the same reason, int32 is 4 bytes, vs a full
 	// Message value which is 100+ bytes and contains pointers and contributes
 	// to increasing GC work.
-	assignments := make(map[int32][]int32, numPartitions)
-	partitions := loadCachedPartitions(numPartitions)
+	assignments := make(map[topicPartition][]int32)
 
 	for i, msg := range msgs {
-		partition := balancer.Balance(msg, partitions...)
-		assignments[int32(partition)] = append(assignments[int32(partition)], int32(i))
+		topic, err := w.chooseTopic(msg)
+		if err != nil {
+			return err
+		}
+
+		numPartitions, err := w.partitions(ctx, topic)
+		if err != nil {
+			return err
+		}
+
+		partition := balancer.Balance(msg, loadCachedPartitions(numPartitions)...)
+
+		key := topicPartition{
+			topic:     topic,
+			partition: int32(partition),
+		}
+
+		assignments[key] = append(assignments[key], int32(i))
 	}
 
 	batches := w.batchMessages(msgs, assignments)
@@ -631,177 +677,47 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 			werr[i] = batch.err
 		}
 	}
-
 	return werr
 }
 
-func (w *Writer) batchMessages(messages []Message, assignments map[int32][]int32) map[*writeBatch][]int32 {
+func (w *Writer) batchMessages(messages []Message, assignments map[topicPartition][]int32) map[*writeBatch][]int32 {
 	var batches map[*writeBatch][]int32
 	if !w.Async {
 		batches = make(map[*writeBatch][]int32, len(assignments))
 	}
 
-	batchSize := w.batchSize()
-	batchBytes := w.batchBytes()
-
 	w.mutex.Lock()
 	defer w.mutex.Unlock()
 
-	if w.batches == nil {
-		w.batches = map[int32]*writeBatch{}
+	if w.writers == nil {
+		w.writers = map[topicPartition]*partitionWriter{}
 	}
 
-	for partition, indexes := range assignments {
-		for _, i := range indexes {
-		assignMessage:
-			batch := w.batches[partition]
-			if batch == nil {
-				batch = w.newWriteBatch(partition)
-				w.batches[partition] = batch
-			}
-			if !batch.add(messages[i], batchSize, batchBytes) {
-				batch.trigger()
-				delete(w.batches, partition)
-				goto assignMessage
-			}
-			if batch.full(batchSize, batchBytes) {
-				batch.trigger()
-				delete(w.batches, partition)
-			}
-			if !w.Async {
-				batches[batch] = append(batches[batch], i)
-			}
+	for key, indexes := range assignments {
+		writer := w.writers[key]
+		if writer == nil {
+			writer = newPartitionWriter(w, key)
+			w.writers[key] = writer
+		}
+		wbatches := writer.writeMessages(messages, indexes)
+
+		for batch, idxs := range wbatches {
+			batches[batch] = idxs
 		}
 	}
 
 	return batches
 }
 
-func (w *Writer) newWriteBatch(partition int32) *writeBatch {
-	batch := newWriteBatch(time.Now(), w.batchTimeout())
-	w.group.Add(1)
-	go func() {
-		defer w.group.Done()
-		w.writeBatch(partition, batch)
-	}()
-	return batch
-}
-
-func (w *Writer) writeBatch(partition int32, batch *writeBatch) {
-	// This goroutine has taken ownership of the batch, it is responsible
-	// for waiting for the batch to be ready (because it became full), or
-	// to timeout.
-	select {
-	case <-batch.timer.C:
-		// The batch timed out, we want to detach it from the writer to
-		// prevent more messages from being added.
-		w.mutex.Lock()
-		if batch == w.batches[partition] {
-			delete(w.batches, partition)
-		}
-		w.mutex.Unlock()
-
-	case <-batch.ready:
-		// The batch became full, it was removed from the writer and its
-		// ready channel was closed. We need to close the timer to avoid
-		// having it leak until it expires.
-		batch.timer.Stop()
-	}
-
-	stats := w.stats()
-	stats.batchTime.observe(int64(time.Since(batch.time)))
-	stats.batchSize.observe(int64(len(batch.msgs)))
-	stats.batchSizeBytes.observe(batch.bytes)
-
-	var res *ProduceResponse
-	var err error
-
-	for attempt, maxAttempts := 0, w.maxAttempts(); attempt < maxAttempts; attempt++ {
-		if attempt != 0 {
-			stats.retries.observe(1)
-			// TODO: should there be a way to asynchronously cancel this
-			// operation?
-			//
-			// * If all goroutines that added message to this batch have stopped
-			//   waiting for it, should we abort?
-			//
-			// * If the writer has been closed? It reduces the durability
-			//   guarantees to abort, but may be better to avoid long wait times
-			//   on close.
-			//
-			delay := backoff(attempt, 100*time.Millisecond, 1*time.Second)
-			w.withLogger(func(log Logger) {
-				log.Printf("backing off %s writing %d messages to %s (partition: %d)", delay, len(batch.msgs), w.Topic, partition)
-			})
-			time.Sleep(delay)
-		}
-
-		w.withLogger(func(log Logger) {
-			log.Printf("writing %d messages to %s (partition: %d)", len(batch.msgs), w.Topic, partition)
-		})
-
-		start := time.Now()
-		res, err = w.produce(partition, batch)
-
-		stats.writes.observe(1)
-		stats.messages.observe(int64(len(batch.msgs)))
-		stats.bytes.observe(batch.bytes)
-		// stats.writeTime used to report the duration of WriteMessages, but the
-		// implementation was broken and reporting values in the nanoseconds
-		// range. In kafka-go 0.4, we recylced this value to instead report the
-		// duration of produce requests, and changed the stats.waitTime value to
-		// report the time that kafka has throttled the requests for.
-		stats.writeTime.observe(int64(time.Since(start)))
-
-		if res != nil {
-			err = res.Error
-			stats.waitTime.observe(int64(res.Throttle))
-		}
-
-		if err == nil {
-			break
-		}
-
-		stats.errors.observe(1)
-
-		w.withErrorLogger(func(log Logger) {
-			log.Printf("error writing messages to %s (partition %d): %s", w.Topic, partition, err)
-		})
-
-		if !isTemporary(err) {
-			break
-		}
-	}
-
-	if res != nil {
-		for i := range batch.msgs {
-			m := &batch.msgs[i]
-			m.Topic = w.Topic
-			m.Partition = int(partition)
-			m.Offset = res.BaseOffset + int64(i)
-
-			if m.Time.IsZero() {
-				m.Time = res.LogAppendTime
-			}
-		}
-	}
-
-	if w.Completion != nil {
-		w.Completion(batch.msgs, err)
-	}
-
-	batch.complete(err)
-}
-
-func (w *Writer) produce(partition int32, batch *writeBatch) (*ProduceResponse, error) {
+func (w *Writer) produce(key topicPartition, batch *writeBatch) (*ProduceResponse, error) {
 	timeout := w.writeTimeout()
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	return w.client(timeout).Produce(ctx, &ProduceRequest{
-		Partition:    int(partition),
-		Topic:        w.Topic,
+		Partition:    int(key.partition),
+		Topic:        key.topic,
 		RequiredAcks: w.RequiredAcks,
 		Compression:  w.Compression,
 		Records: &writerRecords{
@@ -810,7 +726,7 @@ func (w *Writer) produce(partition int32, batch *writeBatch) (*ProduceResponse, 
 	})
 }
 
-func (w *Writer) partitions(ctx context.Context) (int, error) {
+func (w *Writer) partitions(ctx context.Context, topic string) (int, error) {
 	client := w.client(w.readTimeout())
 	// Here we use the transport directly as an optimization to avoid the
 	// construction of temporary request and response objects made by the
@@ -819,13 +735,14 @@ func (w *Writer) partitions(ctx context.Context) (int, error) {
 	// It is expected that the transport will optimize this request by
 	// caching recent results (the kafka.Transport types does).
 	r, err := client.transport().RoundTrip(ctx, client.Addr, &metadataAPI.Request{
-		TopicNames: []string{w.Topic},
+		TopicNames:             []string{topic},
+		AllowAutoTopicCreation: w.AllowAutoTopicCreation,
 	})
 	if err != nil {
 		return 0, err
 	}
 	for _, t := range r.(*metadataAPI.Response).Topics {
-		if t.Name == w.Topic {
+		if t.Name == topic {
 			// This should always hit, unless kafka has a bug.
 			if t.ErrorCode != 0 {
 				return 0, Error(t.ErrorCode)
@@ -834,14 +751,6 @@ func (w *Writer) partitions(ctx context.Context) (int, error) {
 		}
 	}
 	return 0, UnknownTopicOrPartition
-}
-
-func (w *Writer) markClosed() {
-	atomic.StoreUint32(&w.closed, 1)
-}
-
-func (w *Writer) isClosed() bool {
-	return atomic.LoadUint32(&w.closed) != 0
 }
 
 func (w *Writer) client(timeout time.Duration) *Client {
@@ -961,6 +870,298 @@ func (w *Writer) Stats() WriterStats {
 		Async:        w.Async,
 		Topic:        w.Topic,
 	}
+}
+
+func (w *Writer) chooseTopic(msg Message) (string, error) {
+	// w.Topic and msg.Topic are mutually exclusive, meaning only 1 must be set
+	// otherwise we will return an error.
+	if w.Topic != "" && msg.Topic != "" {
+		return "", errors.New("kafka.(*Writer): Topic must not be specified for both Writer and Message")
+	} else if w.Topic == "" && msg.Topic == "" {
+		return "", errors.New("kafka.(*Writer): Topic must be specified for Writer or Message")
+	}
+
+	// now we choose the topic, depending on which one is not empty
+	if msg.Topic != "" {
+		return msg.Topic, nil
+	}
+
+	return w.Topic, nil
+}
+
+type batchQueue struct {
+	queue []*writeBatch
+
+	// Pointers are used here to make `go vet` happy, and avoid copying mutexes.
+	// It may be better to revert these to non-pointers and avoid the copies in
+	// a different way.
+	mutex *sync.Mutex
+	cond  *sync.Cond
+
+	closed bool
+}
+
+func (b *batchQueue) Put(batch *writeBatch) bool {
+	b.cond.L.Lock()
+	defer b.cond.L.Unlock()
+	defer b.cond.Broadcast()
+
+	if b.closed {
+		return false
+	}
+	b.queue = append(b.queue, batch)
+	return true
+}
+
+func (b *batchQueue) Get() *writeBatch {
+	b.cond.L.Lock()
+	defer b.cond.L.Unlock()
+
+	for len(b.queue) == 0 && !b.closed {
+		b.cond.Wait()
+	}
+
+	if len(b.queue) == 0 {
+		return nil
+	}
+
+	batch := b.queue[0]
+	b.queue[0] = nil
+	b.queue = b.queue[1:]
+
+	return batch
+}
+
+func (b *batchQueue) Close() {
+	b.cond.L.Lock()
+	defer b.cond.L.Unlock()
+	defer b.cond.Broadcast()
+
+	b.closed = true
+}
+
+func newBatchQueue(initialSize int) batchQueue {
+	bq := batchQueue{
+		queue: make([]*writeBatch, 0, initialSize),
+		mutex: &sync.Mutex{},
+		cond:  &sync.Cond{},
+	}
+
+	bq.cond.L = bq.mutex
+
+	return bq
+}
+
+// partitionWriter is a writer for a topic-partion pair. It maintains messaging order
+// across batches of messages.
+type partitionWriter struct {
+	meta  topicPartition
+	queue batchQueue
+
+	mutex     sync.Mutex
+	currBatch *writeBatch
+
+	// reference to the writer that owns this batch. Used for the produce logic
+	// as well as stat tracking
+	w *Writer
+}
+
+func newPartitionWriter(w *Writer, key topicPartition) *partitionWriter {
+	writer := &partitionWriter{
+		meta:  key,
+		queue: newBatchQueue(10),
+		w:     w,
+	}
+	w.spawn(writer.writeBatches)
+	return writer
+}
+
+func (ptw *partitionWriter) writeBatches() {
+	for {
+		batch := ptw.queue.Get()
+
+		// The only time we can return nil is when the queue is closed
+		// and empty. If the queue is closed that means
+		// the Writer is closed so once we're here it's time to exit.
+		if batch == nil {
+			return
+		}
+
+		ptw.writeBatch(batch)
+	}
+}
+
+func (ptw *partitionWriter) writeMessages(msgs []Message, indexes []int32) map[*writeBatch][]int32 {
+	ptw.mutex.Lock()
+	defer ptw.mutex.Unlock()
+
+	batchSize := ptw.w.batchSize()
+	batchBytes := ptw.w.batchBytes()
+
+	var batches map[*writeBatch][]int32
+	if !ptw.w.Async {
+		batches = make(map[*writeBatch][]int32, 1)
+	}
+
+	for _, i := range indexes {
+	assignMessage:
+		batch := ptw.currBatch
+		if batch == nil {
+			batch = ptw.newWriteBatch()
+			ptw.currBatch = batch
+		}
+		if !batch.add(msgs[i], batchSize, batchBytes) {
+			batch.trigger()
+			ptw.queue.Put(batch)
+			ptw.currBatch = nil
+			goto assignMessage
+		}
+
+		if batch.full(batchSize, batchBytes) {
+			batch.trigger()
+			ptw.queue.Put(batch)
+			ptw.currBatch = nil
+		}
+
+		if !ptw.w.Async {
+			batches[batch] = append(batches[batch], i)
+		}
+	}
+	return batches
+}
+
+// ptw.w can be accessed here because this is called with the lock ptw.mutex already held.
+func (ptw *partitionWriter) newWriteBatch() *writeBatch {
+	batch := newWriteBatch(time.Now(), ptw.w.batchTimeout())
+	ptw.w.spawn(func() { ptw.awaitBatch(batch) })
+	return batch
+}
+
+// awaitBatch waits for a batch to either fill up or time out.
+// If the batch is full it only stops the timer, if the timer
+// expires it will queue the batch for writing if needed.
+func (ptw *partitionWriter) awaitBatch(batch *writeBatch) {
+	select {
+	case <-batch.timer.C:
+		ptw.mutex.Lock()
+		// detach the batch from the writer if we're still attached
+		// and queue for writing.
+		// Only the current batch can expire, all previous batches were already written to the queue.
+		// If writeMesseages locks pw.mutex after the timer fires but before this goroutine
+		// can lock pw.mutex it will either have filled the batch and enqueued it which will mean
+		// pw.currBatch != batch so we just move on.
+		// Otherwise, we detach the batch from the ptWriter and enqueue it for writing.
+		if ptw.currBatch == batch {
+			ptw.queue.Put(batch)
+			ptw.currBatch = nil
+		}
+		ptw.mutex.Unlock()
+	case <-batch.ready:
+		// The batch became full, it was removed from the ptwriter and its
+		// ready channel was closed. We need to close the timer to avoid
+		// having it leak until it expires.
+		batch.timer.Stop()
+	}
+}
+
+func (ptw *partitionWriter) writeBatch(batch *writeBatch) {
+	stats := ptw.w.stats()
+	stats.batchTime.observe(int64(time.Since(batch.time)))
+	stats.batchSize.observe(int64(len(batch.msgs)))
+	stats.batchSizeBytes.observe(batch.bytes)
+
+	var res *ProduceResponse
+	var err error
+	key := ptw.meta
+	for attempt, maxAttempts := 0, ptw.w.maxAttempts(); attempt < maxAttempts; attempt++ {
+		if attempt != 0 {
+			stats.retries.observe(1)
+			// TODO: should there be a way to asynchronously cancel this
+			// operation?
+			//
+			// * If all goroutines that added message to this batch have stopped
+			//   waiting for it, should we abort?
+			//
+			// * If the writer has been closed? It reduces the durability
+			//   guarantees to abort, but may be better to avoid long wait times
+			//   on close.
+			//
+			delay := backoff(attempt, 100*time.Millisecond, 1*time.Second)
+			ptw.w.withLogger(func(log Logger) {
+				log.Printf("backing off %s writing %d messages to %s (partition: %d)", delay, len(batch.msgs), key.topic, key.partition)
+			})
+			time.Sleep(delay)
+		}
+
+		ptw.w.withLogger(func(log Logger) {
+			log.Printf("writing %d messages to %s (partition: %d)", len(batch.msgs), key.topic, key.partition)
+		})
+
+		start := time.Now()
+		res, err = ptw.w.produce(key, batch)
+
+		stats.writes.observe(1)
+		stats.messages.observe(int64(len(batch.msgs)))
+		stats.bytes.observe(batch.bytes)
+		// stats.writeTime used to report the duration of WriteMessages, but the
+		// implementation was broken and reporting values in the nanoseconds
+		// range. In kafka-go 0.4, we recylced this value to instead report the
+		// duration of produce requests, and changed the stats.waitTime value to
+		// report the time that kafka has throttled the requests for.
+		stats.writeTime.observe(int64(time.Since(start)))
+
+		if res != nil {
+			err = res.Error
+			stats.waitTime.observe(int64(res.Throttle))
+		}
+
+		if err == nil {
+			break
+		}
+
+		stats.errors.observe(1)
+
+		ptw.w.withErrorLogger(func(log Logger) {
+			log.Printf("error writing messages to %s (partition %d): %s", key.topic, key.partition, err)
+		})
+
+		if !isTemporary(err) && !isTransientNetworkError(err) {
+			break
+		}
+	}
+
+	if res != nil {
+		for i := range batch.msgs {
+			m := &batch.msgs[i]
+			m.Topic = key.topic
+			m.Partition = int(key.partition)
+			m.Offset = res.BaseOffset + int64(i)
+
+			if m.Time.IsZero() {
+				m.Time = res.LogAppendTime
+			}
+		}
+	}
+
+	if ptw.w.Completion != nil {
+		ptw.w.Completion(batch.msgs, err)
+	}
+
+	batch.complete(err)
+}
+
+func (ptw *partitionWriter) close() {
+	ptw.mutex.Lock()
+	defer ptw.mutex.Unlock()
+
+	if ptw.currBatch != nil {
+		batch := ptw.currBatch
+		ptw.queue.Put(batch)
+		ptw.currBatch = nil
+		batch.trigger()
+	}
+
+	ptw.queue.Close()
 }
 
 type writeBatch struct {

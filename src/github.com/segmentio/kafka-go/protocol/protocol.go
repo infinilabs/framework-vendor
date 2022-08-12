@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -100,8 +101,10 @@ const (
 	AlterPartitionReassignments ApiKey = 45
 	ListPartitionReassignments  ApiKey = 46
 	OffsetDelete                ApiKey = 47
+	DescribeClientQuotas        ApiKey = 48
+	AlterClientQuotas           ApiKey = 49
 
-	numApis = 48
+	numApis = 50
 )
 
 var apiNames = [numApis]string{
@@ -149,17 +152,20 @@ var apiNames = [numApis]string{
 	DescribeDelegationToken:     "DescribeDelegationToken",
 	DeleteGroups:                "DeleteGroups",
 	ElectLeaders:                "ElectLeaders",
-	IncrementalAlterConfigs:     "IncrementalAlfterConfigs",
+	IncrementalAlterConfigs:     "IncrementalAlterConfigs",
 	AlterPartitionReassignments: "AlterPartitionReassignments",
 	ListPartitionReassignments:  "ListPartitionReassignments",
 	OffsetDelete:                "OffsetDelete",
+	DescribeClientQuotas:        "DescribeClientQuotas",
+	AlterClientQuotas:           "AlterClientQuotas",
 }
 
 type messageType struct {
-	version int16
-	gotype  reflect.Type
-	decode  decodeFunc
-	encode  encodeFunc
+	version  int16
+	flexible bool
+	gotype   reflect.Type
+	decode   decodeFunc
+	encode   encodeFunc
 }
 
 func (t *messageType) new() Message {
@@ -211,6 +217,10 @@ func makeTypes(t reflect.Type) []messageType {
 	minVersion := int16(-1)
 	maxVersion := int16(-1)
 
+	// All future versions will be flexible (according to spec), so don't need to
+	// worry about maxes here.
+	minFlexibleVersion := int16(-1)
+
 	forEachStructField(t, func(_ reflect.Type, _ index, tag string) {
 		forEachStructTag(tag, func(tag structTag) bool {
 			if minVersion < 0 || tag.MinVersion < minVersion {
@@ -219,6 +229,9 @@ func makeTypes(t reflect.Type) []messageType {
 			if maxVersion < 0 || tag.MaxVersion > maxVersion {
 				maxVersion = tag.MaxVersion
 			}
+			if tag.TagID > -2 && (minFlexibleVersion < 0 || tag.MinVersion < minFlexibleVersion) {
+				minFlexibleVersion = tag.MinVersion
+			}
 			return true
 		})
 	})
@@ -226,11 +239,14 @@ func makeTypes(t reflect.Type) []messageType {
 	types := make([]messageType, 0, (maxVersion-minVersion)+1)
 
 	for v := minVersion; v <= maxVersion; v++ {
+		flexible := minFlexibleVersion >= 0 && v >= minFlexibleVersion
+
 		types = append(types, messageType{
-			version: v,
-			gotype:  t,
-			decode:  decodeFuncOf(t, v, structTag{}),
-			encode:  encodeFuncOf(t, v, structTag{}),
+			version:  v,
+			gotype:   t,
+			flexible: flexible,
+			decode:   decodeFuncOf(t, v, flexible, structTag{}),
+			encode:   encodeFuncOf(t, v, flexible, structTag{}),
 		})
 	}
 
@@ -242,6 +258,7 @@ type structTag struct {
 	MaxVersion int16
 	Compact    bool
 	Nullable   bool
+	TagID      int
 }
 
 func forEachStructTag(tag string, do func(structTag) bool) {
@@ -253,6 +270,11 @@ func forEachStructTag(tag string, do func(structTag) bool) {
 		tag := structTag{
 			MinVersion: -1,
 			MaxVersion: -1,
+
+			// Legitimate tag IDs can start at 0. We use -1 as a placeholder to indicate
+			// that the message type is flexible, so that leaves -2 as the default for
+			// indicating that there is no tag ID and the message is not flexible.
+			TagID: -2,
 		}
 
 		var err error
@@ -262,6 +284,10 @@ func forEachStructTag(tag string, do func(structTag) bool) {
 				tag.MinVersion, err = parseVersion(s[4:])
 			case strings.HasPrefix(s, "max="):
 				tag.MaxVersion, err = parseVersion(s[4:])
+			case s == "tag":
+				tag.TagID = -1
+			case strings.HasPrefix(s, "tag="):
+				tag.TagID, err = strconv.Atoi(s[4:])
 			case s == "compact":
 				tag.Compact = true
 			case s == "nullable":
@@ -340,35 +366,36 @@ func parseVersion(s string) (int16, error) {
 }
 
 func dontExpectEOF(err error) error {
-	switch err {
-	case nil:
-		return nil
-	case io.EOF:
-		return io.ErrUnexpectedEOF
-	default:
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return io.ErrUnexpectedEOF
+		}
+
 		return err
 	}
+
+	return nil
 }
 
 type Broker struct {
 	Rack string
 	Host string
-	Port int
-	ID   int
+	Port int32
+	ID   int32
 }
 
 func (b Broker) String() string {
-	return net.JoinHostPort(b.Host, strconv.Itoa(b.Port))
+	return net.JoinHostPort(b.Host, itoa(b.Port))
 }
 
 func (b Broker) Format(w fmt.State, v rune) {
 	switch v {
 	case 'd':
-		io.WriteString(w, strconv.Itoa(b.ID))
+		io.WriteString(w, itoa(b.ID))
 	case 's':
 		io.WriteString(w, b.String())
 	case 'v':
-		io.WriteString(w, strconv.Itoa(b.ID))
+		io.WriteString(w, itoa(b.ID))
 		io.WriteString(w, " ")
 		io.WriteString(w, b.String())
 		if b.Rack != "" {
@@ -378,19 +405,39 @@ func (b Broker) Format(w fmt.State, v rune) {
 	}
 }
 
+func itoa(i int32) string {
+	return strconv.Itoa(int(i))
+}
+
 type Topic struct {
 	Name       string
-	Error      int
-	Partitions map[int]Partition
+	Error      int16
+	Partitions map[int32]Partition
 }
 
 type Partition struct {
-	ID       int
-	Error    int
-	Leader   int
-	Replicas []int
-	ISR      []int
-	Offline  []int
+	ID       int32
+	Error    int16
+	Leader   int32
+	Replicas []int32
+	ISR      []int32
+	Offline  []int32
+}
+
+// RawExchanger is an extention to the Message interface to allow messages
+// to control the request response cycle for the message. This is currently
+// only used to facilitate v0 SASL Authenticate requests being written in
+// a non-standard fashion when the SASL Handshake was done at v0 but not
+// when done at v1.
+type RawExchanger interface {
+	// Required should return true when a RawExchange is needed.
+	// The passed in versions are the negotiated versions for the connection
+	// performing the request.
+	Required(versions map[ApiKey]int16) bool
+	// RawExchange is given the raw connection to the broker and the Message
+	// is responsible for writing itself to the connection as well as reading
+	// the response.
+	RawExchange(rw io.ReadWriter) (Message, error)
 }
 
 // BrokerMessage is an extension of the Message interface implemented by some
@@ -407,6 +454,14 @@ type BrokerMessage interface {
 type GroupMessage interface {
 	// Returns the group configured on the message.
 	Group() string
+}
+
+// TransactionalMessage is an extension of the Message interface implemented by some
+// request types to inform the program that they should be routed to a transaction
+// coordinator.
+type TransactionalMessage interface {
+	// Returns the transactional id configured on the message.
+	Transaction() string
 }
 
 // PreparedMessage is an extension of the Message interface implemented by some
@@ -437,7 +492,7 @@ type Merger interface {
 	Merge(messages []Message, results []interface{}) (Message, error)
 }
 
-// Result converts r to a Message or and error, or panics if r could be be
+// Result converts r to a Message or an error, or panics if r could not be
 // converted to these types.
 func Result(r interface{}) (Message, error) {
 	switch v := r.(type) {

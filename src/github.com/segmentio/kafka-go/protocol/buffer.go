@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -22,10 +23,8 @@ import (
 // goroutines.
 type Bytes interface {
 	io.ReadCloser
-	// Returns the number of bytes in the sequence. The value returned is the
-	// total size of the underlying byte sequence, not the number of bytes
-	// remaining to be read.
-	Size() int64
+	// Returns the number of bytes remaining to be read from the payload.
+	Len() int
 }
 
 // NewBytes constructs a Bytes value from b.
@@ -44,13 +43,15 @@ func NewBytes(b []byte) Bytes {
 	return r
 }
 
-// ReadAll reads b in a byte slice.
+// ReadAll is similar to ioutil.ReadAll, but it takes advantage of knowing the
+// length of b to minimize the memory footprint.
+//
+// The function returns a nil slice if b is nil.
 func ReadAll(b Bytes) ([]byte, error) {
 	if b == nil {
 		return nil, nil
 	}
-	defer b.Close()
-	s := make([]byte, b.Size())
+	s := make([]byte, b.Len())
 	_, err := io.ReadFull(b, s)
 	return s, err
 }
@@ -151,7 +152,7 @@ func (p *page) ReadAt(b []byte, off int64) (int, error) {
 
 func (p *page) ReadFrom(r io.Reader) (int64, error) {
 	n, err := io.ReadFull(r, p.buffer[p.length:])
-	if err == io.EOF || err == io.ErrUnexpectedEOF {
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 		err = nil
 	}
 	p.length += n
@@ -239,7 +240,7 @@ func (pb *pageBuffer) Close() error {
 }
 
 func (pb *pageBuffer) Len() int {
-	return pb.length
+	return pb.length - pb.cursor
 }
 
 func (pb *pageBuffer) Size() int64 {
@@ -499,6 +500,8 @@ func (ref *pageRef) unref() {
 	}
 }
 
+func (ref *pageRef) Len() int { return int(ref.Size() - ref.cursor) }
+
 func (ref *pageRef) Size() int64 { return int64(ref.length) }
 
 func (ref *pageRef) Close() error { ref.unref(); return nil }
@@ -577,14 +580,7 @@ func (ref *pageRef) WriteTo(w io.Writer) (wn int64, err error) {
 func (ref *pageRef) scan(off int64, f func([]byte) bool) {
 	begin := ref.offset + off
 	end := ref.offset + int64(ref.length)
-
-	if begin < end {
-		for _, p := range ref.pages {
-			if !f(p.slice(begin, end)) {
-				break
-			}
-		}
-	}
+	ref.pages.scan(begin, end, f)
 }
 
 var (
@@ -611,12 +607,6 @@ func (a *pageRefAllocator) newPageRef() *pageRef {
 	return ref
 }
 
-func unref(x interface{}) {
-	if r, _ := x.(interface{ unref() }); r != nil {
-		r.unref()
-	}
-}
-
 func seek(cursor, limit, offset int64, whence int) (int64, error) {
 	switch whence {
 	case io.SeekStart:
@@ -640,11 +630,5 @@ func seek(cursor, limit, offset int64, whence int) (int64, error) {
 func closeBytes(b Bytes) {
 	if b != nil {
 		b.Close()
-	}
-}
-
-func resetBytes(b Bytes) {
-	if r, _ := b.(interface{ Reset() }); r != nil {
-		r.Reset()
 	}
 }

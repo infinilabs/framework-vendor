@@ -108,19 +108,8 @@ func (m *multiRecordReader) ReadRecord() (*Record, error) {
 	}
 }
 
-func concatRecordReader(head RecordReader, tail RecordReader) RecordReader {
-	if head == nil {
-		return tail
-	}
-	if m, _ := head.(*multiRecordReader); m != nil {
-		m.batches = append(m.batches, tail)
-		return m
-	}
-	return MultiRecordReader(head, tail)
-}
-
 // optimizedRecordReader is an implementation of a RecordReader which exposes a
-// sequence
+// sequence.
 type optimizedRecordReader struct {
 	records []optimizedRecord
 	index   int
@@ -187,6 +176,13 @@ type ControlRecord struct {
 }
 
 func ReadControlRecord(r *Record) (*ControlRecord, error) {
+	if r.Key != nil {
+		defer r.Key.Close()
+	}
+	if r.Value != nil {
+		defer r.Value.Close()
+	}
+
 	k, err := ReadAll(r.Key)
 	if err != nil {
 		return nil, err

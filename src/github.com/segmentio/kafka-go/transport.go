@@ -10,6 +10,7 @@ import (
 	"net"
 	"runtime/pprof"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -92,6 +93,25 @@ type Transport struct {
 
 	// SASL configures the Transfer to use SASL authentication.
 	SASL sasl.Mechanism
+
+	// An optional resolver used to translate broker host names into network
+	// addresses.
+	//
+	// The resolver will be called for every request (not every connection),
+	// making it possible to implement ACL policies by validating that the
+	// program is allowed to connect to the kafka broker. This also means that
+	// the resolver should probably provide a caching layer to avoid storming
+	// the service discovery backend with requests.
+	//
+	// When set, the Dial function is not responsible for performing name
+	// resolution, and is always called with a pre-resolved address.
+	Resolver BrokerResolver
+
+	// The background context used to control goroutines started internally by
+	// the transport.
+	//
+	// If nil, context.Background() is used instead.
+	Context context.Context
 
 	mutex sync.RWMutex
 	pools map[networkAddress]*connPool
@@ -210,7 +230,7 @@ func (t *Transport) grabPool(addr net.Addr) *connPool {
 		return p
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.context())
 
 	p = &connPool{
 		refc: 2,
@@ -222,10 +242,11 @@ func (t *Transport) grabPool(addr net.Addr) *connPool {
 		clientID:    t.ClientID,
 		tls:         t.TLS,
 		sasl:        t.SASL,
+		resolver:    t.Resolver,
 
 		ready:  make(event),
 		wake:   make(chan event),
-		conns:  make(map[int]*connGroup),
+		conns:  make(map[int32]*connGroup),
 		cancel: cancel,
 	}
 
@@ -237,6 +258,13 @@ func (t *Transport) grabPool(addr net.Addr) *connPool {
 	}
 	t.pools[k] = p
 	return p
+}
+
+func (t *Transport) context() context.Context {
+	if t.Context != nil {
+		return t.Context
+	}
+	return context.Background()
 }
 
 type event chan struct{}
@@ -255,6 +283,7 @@ type connPool struct {
 	clientID    string
 	tls         *tls.Config
 	sasl        sasl.Mechanism
+	resolver    BrokerResolver
 	// Signaling mechanisms to orchestrate communications between the pool and
 	// the rest of the program.
 	once   sync.Once  // ensure that `ready` is triggered only once
@@ -263,9 +292,9 @@ type connPool struct {
 	cancel context.CancelFunc
 	// Mutable fields of the connection pool, access must be synchronized.
 	mutex sync.RWMutex
-	conns map[int]*connGroup // data connections used for produce/fetch/etc...
-	ctrl  *connGroup         // control connections used for metadata requests
-	state atomic.Value       // cached cluster state
+	conns map[int32]*connGroup // data connections used for produce/fetch/etc...
+	ctrl  *connGroup           // control connections used for metadata requests
+	state atomic.Value         // cached cluster state
 }
 
 type connPoolState struct {
@@ -310,33 +339,36 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 		return nil, ctx.Err()
 	}
 
-	var expectTopics []string
-	defer func() {
-		if len(expectTopics) != 0 {
-			p.refreshMetadata(ctx, expectTopics)
-		}
-	}()
-
-	var state = p.grabState()
+	state := p.grabState()
 	var response promise
 
 	switch m := req.(type) {
 	case *meta.Request:
-		// We serve metadata requests directly from the transport cache.
+		// We serve metadata requests directly from the transport cache unless
+		// we would like to auto create a topic that isn't in our cache.
 		//
 		// This reduces the number of round trips to kafka brokers while keeping
 		// the logic simple when applying partitioning strategies.
 		if state.err != nil {
 			return nil, state.err
 		}
-		return filterMetadataResponse(m, state.metadata), nil
 
-	case *createtopics.Request:
-		// Force an update of the metadata when adding topics,
-		// otherwise the cached state would get out of sync.
-		expectTopics = make([]string, len(m.Topics))
-		for i := range m.Topics {
-			expectTopics[i] = m.Topics[i].Name
+		cachedMeta := filterMetadataResponse(m, state.metadata)
+		// requestNeeded indicates if we need to send this metadata request to the server.
+		// It's true when we want to auto-create topics and we don't have the topic in our
+		// cache.
+		var requestNeeded bool
+		if m.AllowAutoTopicCreation {
+			for _, topic := range cachedMeta.Topics {
+				if topic.ErrorCode == int16(UnknownTopicOrPartition) {
+					requestNeeded = true
+					break
+				}
+			}
+		}
+
+		if !requestNeeded {
+			return cachedMeta, nil
 		}
 
 	case protocol.Splitter:
@@ -358,7 +390,48 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 		response = p.sendRequest(ctx, req, state)
 	}
 
-	return response.await(ctx)
+	r, err := response.await(ctx)
+	if err != nil {
+		return r, err
+	}
+
+	switch resp := r.(type) {
+	case *createtopics.Response:
+		// Force an update of the metadata when adding topics,
+		// otherwise the cached state would get out of sync.
+		topicsToRefresh := make([]string, 0, len(resp.Topics))
+		for _, topic := range resp.Topics {
+			// fixes issue 672: don't refresh topics that failed to create, it causes the library to hang indefinitely
+			if topic.ErrorCode != 0 {
+				continue
+			}
+
+			topicsToRefresh = append(topicsToRefresh, topic.Name)
+		}
+
+		p.refreshMetadata(ctx, topicsToRefresh)
+	case *meta.Response:
+		m := req.(*meta.Request)
+		// If we get here with allow auto topic creation then
+		// we didn't have that topic in our cache so we should update
+		// the cache.
+		if m.AllowAutoTopicCreation {
+			topicsToRefresh := make([]string, 0, len(resp.Topics))
+			for _, topic := range resp.Topics {
+				// fixes issue 806: don't refresh topics that failed to create,
+				// it may means kafka doesn't enable auto topic creation.
+				// This causes the library to hang indefinitely, same as createtopics process.
+				if topic.ErrorCode != 0 {
+					continue
+				}
+
+				topicsToRefresh = append(topicsToRefresh, topic.Name)
+			}
+			p.refreshMetadata(ctx, topicsToRefresh)
+		}
+	}
+
+	return r, nil
 }
 
 // refreshMetadata forces an update of the cached cluster metadata, and waits
@@ -438,8 +511,8 @@ func (p *connPool) update(ctx context.Context, metadata *meta.Response, err erro
 	}
 
 	state := p.grabState()
-	addBrokers := make(map[int]struct{})
-	delBrokers := make(map[int]struct{})
+	addBrokers := make(map[int32]struct{})
+	delBrokers := make(map[int32]struct{})
 
 	if err != nil {
 		// Only update the error on the transport if the cluster layout was
@@ -466,6 +539,7 @@ func (p *connPool) update(ctx context.Context, metadata *meta.Response, err erro
 		}
 
 		state.metadata, state.layout = metadata, layout
+		state.err = nil
 	}
 
 	defer p.setReady()
@@ -491,9 +565,11 @@ func (p *connPool) update(ctx context.Context, metadata *meta.Response, err erro
 
 		for id := range addBrokers {
 			broker := layout.Brokers[id]
-			p.conns[id] = p.newConnGroup(&networkAddress{
-				network: "tcp",
-				address: broker.String(),
+			p.conns[id] = p.newBrokerConnGroup(Broker{
+				Rack: broker.Rack,
+				Host: broker.Host,
+				Port: int(broker.Port),
+				ID:   int(broker.ID),
 			})
 		}
 	}
@@ -512,7 +588,7 @@ func (p *connPool) discover(ctx context.Context, wake <-chan event) {
 	defer timer.Stop()
 
 	var notify event
-	var done = ctx.Done()
+	done := ctx.Done()
 
 	for {
 		c, err := p.grabClusterConn(ctx)
@@ -520,10 +596,7 @@ func (p *connPool) discover(ctx context.Context, wake <-chan event) {
 			p.update(ctx, nil, err)
 		} else {
 			res := make(async, 1)
-			req := &meta.Request{
-				IncludeClusterAuthorizedOperations: true,
-				IncludeTopicAuthorizedOperations:   true,
-			}
+			req := &meta.Request{}
 			deadline, cancel := context.WithTimeout(ctx, p.metadataTTL)
 			c.reqs <- connRequest{
 				ctx: deadline,
@@ -532,7 +605,7 @@ func (p *connPool) discover(ctx context.Context, wake <-chan event) {
 			}
 			r, err := res.await(deadline)
 			cancel()
-			if err != nil && err == ctx.Err() {
+			if err != nil && errors.Is(err, ctx.Err()) {
 				return
 			}
 			ret, _ := r.(*meta.Response)
@@ -557,14 +630,14 @@ func (p *connPool) discover(ctx context.Context, wake <-chan event) {
 // grabBrokerConn returns a connection to a specific broker represented by the
 // broker id passed as argument. If the broker id was not known, an error is
 // returned.
-func (p *connPool) grabBrokerConn(ctx context.Context, brokerID int) (*conn, error) {
+func (p *connPool) grabBrokerConn(ctx context.Context, brokerID int32) (*conn, error) {
 	p.mutex.RLock()
-	c := p.conns[brokerID]
+	g := p.conns[brokerID]
 	p.mutex.RUnlock()
-	if c == nil {
+	if g == nil {
 		return nil, BrokerNotAvailable
 	}
-	return c.grabConnOrConnect(ctx)
+	return g.grabConnOrConnect(ctx)
 }
 
 // grabClusterConn returns the connection to the kafka cluster that the pool is
@@ -585,7 +658,7 @@ func (p *connPool) grabClusterConn(ctx context.Context) (*conn, error) {
 }
 
 func (p *connPool) sendRequest(ctx context.Context, req Request, state connPoolState) promise {
-	brokerID := -1
+	brokerID := int32(-1)
 
 	switch m := req.(type) {
 	case protocol.BrokerMessage:
@@ -609,7 +682,17 @@ func (p *connPool) sendRequest(ctx context.Context, req Request, state connPoolS
 		if err != nil {
 			return reject(err)
 		}
-		brokerID = int(r.(*findcoordinator.Response).NodeID)
+		brokerID = r.(*findcoordinator.Response).NodeID
+	case protocol.TransactionalMessage:
+		p := p.sendRequest(ctx, &findcoordinator.Request{
+			Key:     m.Transaction(),
+			KeyType: int8(CoordinatorKeyTypeTransaction),
+		}, state)
+		r, err := p.await(ctx)
+		if err != nil {
+			return reject(err)
+		}
+		brokerID = r.(*findcoordinator.Response).NodeID
 	}
 
 	var c *conn
@@ -683,17 +766,17 @@ func sortMetadataPartitions(partitions []meta.ResponsePartition) {
 
 func makeLayout(metadataResponse *meta.Response) protocol.Cluster {
 	layout := protocol.Cluster{
-		Controller: int(metadataResponse.ControllerID),
-		Brokers:    make(map[int]protocol.Broker),
+		Controller: metadataResponse.ControllerID,
+		Brokers:    make(map[int32]protocol.Broker),
 		Topics:     make(map[string]protocol.Topic),
 	}
 
 	for _, broker := range metadataResponse.Brokers {
-		layout.Brokers[int(broker.NodeID)] = protocol.Broker{
+		layout.Brokers[broker.NodeID] = protocol.Broker{
 			Rack: broker.Rack,
 			Host: broker.Host,
-			Port: int(broker.Port),
-			ID:   int(broker.NodeID),
+			Port: broker.Port,
+			ID:   broker.NodeID,
 		}
 	}
 
@@ -703,7 +786,7 @@ func makeLayout(metadataResponse *meta.Response) protocol.Cluster {
 		}
 		layout.Topics[topic.Name] = protocol.Topic{
 			Name:       topic.Name,
-			Error:      int(topic.ErrorCode),
+			Error:      topic.ErrorCode,
 			Partitions: makePartitions(topic.Partitions),
 		}
 	}
@@ -711,8 +794,8 @@ func makeLayout(metadataResponse *meta.Response) protocol.Cluster {
 	return layout
 }
 
-func makePartitions(metadataPartitions []meta.ResponsePartition) map[int]protocol.Partition {
-	protocolPartitions := make(map[int]protocol.Partition, len(metadataPartitions))
+func makePartitions(metadataPartitions []meta.ResponsePartition) map[int32]protocol.Partition {
+	protocolPartitions := make(map[int32]protocol.Partition, len(metadataPartitions))
 	numBrokerIDs := 0
 
 	for _, p := range metadataPartitions {
@@ -721,18 +804,18 @@ func makePartitions(metadataPartitions []meta.ResponsePartition) map[int]protoco
 
 	// Reduce the memory footprint a bit by allocating a single buffer to write
 	// all broker ids.
-	brokerIDs := make([]int, 0, numBrokerIDs)
+	brokerIDs := make([]int32, 0, numBrokerIDs)
 
 	for _, p := range metadataPartitions {
-		var rep, isr, off []int
+		var rep, isr, off []int32
 		brokerIDs, rep = appendBrokerIDs(brokerIDs, p.ReplicaNodes)
 		brokerIDs, isr = appendBrokerIDs(brokerIDs, p.IsrNodes)
 		brokerIDs, off = appendBrokerIDs(brokerIDs, p.OfflineReplicas)
 
-		protocolPartitions[int(p.PartitionIndex)] = protocol.Partition{
-			ID:       int(p.PartitionIndex),
-			Error:    int(p.ErrorCode),
-			Leader:   int(p.LeaderID),
+		protocolPartitions[p.PartitionIndex] = protocol.Partition{
+			ID:       p.PartitionIndex,
+			Error:    p.ErrorCode,
+			Leader:   p.LeaderID,
 			Replicas: rep,
 			ISR:      isr,
 			Offline:  off,
@@ -742,18 +825,30 @@ func makePartitions(metadataPartitions []meta.ResponsePartition) map[int]protoco
 	return protocolPartitions
 }
 
-func appendBrokerIDs(ids []int, brokers []int32) ([]int, []int) {
+func appendBrokerIDs(ids, brokers []int32) ([]int32, []int32) {
 	i := len(ids)
-	for _, id := range brokers {
-		ids = append(ids, int(id))
-	}
-	return ids, ids[i:]
+	ids = append(ids, brokers...)
+	return ids, ids[i:len(ids):len(ids)]
 }
 
 func (p *connPool) newConnGroup(a net.Addr) *connGroup {
 	return &connGroup{
 		addr: a,
 		pool: p,
+		broker: Broker{
+			ID: -1,
+		},
+	}
+}
+
+func (p *connPool) newBrokerConnGroup(broker Broker) *connGroup {
+	return &connGroup{
+		addr: &networkAddress{
+			network: "tcp",
+			address: net.JoinHostPort(broker.Host, strconv.Itoa(broker.Port)),
+		},
+		pool:   p,
+		broker: broker,
 	}
 }
 
@@ -778,6 +873,8 @@ func (p async) await(ctx context.Context) (Response, error) {
 	select {
 	case x := <-p:
 		switch v := x.(type) {
+		case nil:
+			return nil, nil // A nil response is ok (e.g. when RequiredAcks is None)
 		case Response:
 			return v, nil
 		case error:
@@ -847,7 +944,8 @@ var defaultDialer = net.Dialer{
 // actual network connections are lazily open before sending requests, and
 // closed if they are unused for longer than the idle timeout.
 type connGroup struct {
-	addr net.Addr
+	addr   net.Addr
+	broker Broker
 	// Immutable state of the connection.
 	pool *connPool
 	// Shared state of the connection, this is synchronized on the mutex through
@@ -871,14 +969,46 @@ func (g *connGroup) closeIdleConns() {
 }
 
 func (g *connGroup) grabConnOrConnect(ctx context.Context) (*conn, error) {
-	c := g.grabConn()
+	rslv := g.pool.resolver
+	addr := g.addr
+	var c *conn
+
+	if rslv == nil {
+		c = g.grabConn()
+	} else {
+		var err error
+		broker := g.broker
+
+		if broker.ID < 0 {
+			host, port, err := splitHostPortNumber(addr.String())
+			if err != nil {
+				return nil, err
+			}
+			broker.Host = host
+			broker.Port = port
+		}
+
+		ipAddrs, err := rslv.LookupBrokerIPAddr(ctx, broker)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, ipAddr := range ipAddrs {
+			network := addr.Network()
+			address := net.JoinHostPort(ipAddr.String(), strconv.Itoa(broker.Port))
+
+			if c = g.grabConnTo(network, address); c != nil {
+				break
+			}
+		}
+	}
 
 	if c == nil {
 		connChan := make(chan *conn)
 		errChan := make(chan error)
 
 		go func() {
-			c, err := g.connect(ctx)
+			c, err := g.connect(ctx, addr)
 			if err != nil {
 				select {
 				case errChan <- err:
@@ -905,6 +1035,30 @@ func (g *connGroup) grabConnOrConnect(ctx context.Context) (*conn, error) {
 	}
 
 	return c, nil
+}
+
+func (g *connGroup) grabConnTo(network, address string) *conn {
+	g.mutex.Lock()
+	defer g.mutex.Unlock()
+
+	for i := len(g.idleConns) - 1; i >= 0; i-- {
+		c := g.idleConns[i]
+
+		if c.network == network && c.address == address {
+			copy(g.idleConns[i:], g.idleConns[i+1:])
+			n := len(g.idleConns) - 1
+			g.idleConns[n] = nil
+			g.idleConns = g.idleConns[:n]
+
+			if c.timer != nil {
+				c.timer.Stop()
+			}
+
+			return c
+		}
+	}
+
+	return nil
 }
 
 func (g *connGroup) grabConn() *conn {
@@ -972,14 +1126,14 @@ func (g *connGroup) releaseConn(c *conn) bool {
 	return true
 }
 
-func (g *connGroup) connect(ctx context.Context) (*conn, error) {
+func (g *connGroup) connect(ctx context.Context, addr net.Addr) (*conn, error) {
 	deadline := time.Now().Add(g.pool.dialTimeout)
 
 	ctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 
-	var network = strings.Split(g.addr.Network(), ",")
-	var address = strings.Split(g.addr.String(), ",")
+	network := strings.Split(addr.Network(), ",")
+	address := strings.Split(addr.String(), ",")
 	var netConn net.Conn
 	var netAddr net.Addr
 	var err error
@@ -1016,8 +1170,8 @@ func (g *connGroup) connect(ctx context.Context) (*conn, error) {
 	}()
 
 	if tlsConfig := g.pool.tls; tlsConfig != nil {
-		if tlsConfig.ServerName == "" && !tlsConfig.InsecureSkipVerify {
-			host, _, _ := net.SplitHostPort(netAddr.String())
+		if tlsConfig.ServerName == "" {
+			host, _ := splitHostPort(netAddr.String())
 			tlsConfig = tlsConfig.Clone()
 			tlsConfig.ServerName = host
 		}
@@ -1026,12 +1180,6 @@ func (g *connGroup) connect(ctx context.Context) (*conn, error) {
 
 	pc := protocol.NewConn(netConn, g.pool.clientID)
 	pc.SetDeadline(deadline)
-
-	if g.pool.sasl != nil {
-		if err := authenticateSASL(ctx, pc, g.pool.sasl); err != nil {
-			return nil, err
-		}
-	}
 
 	r, err := pc.RoundTrip(new(apiversions.Request))
 	if err != nil {
@@ -1052,8 +1200,27 @@ func (g *connGroup) connect(ctx context.Context) (*conn, error) {
 	pc.SetVersions(ver)
 	pc.SetDeadline(time.Time{})
 
+	if g.pool.sasl != nil {
+		host, port, err := splitHostPortNumber(netAddr.String())
+		if err != nil {
+			return nil, err
+		}
+		metadata := &sasl.Metadata{
+			Host: host,
+			Port: port,
+		}
+		if err := authenticateSASL(sasl.WithMetadata(ctx, metadata), pc, g.pool.sasl); err != nil {
+			return nil, err
+		}
+	}
+
 	reqs := make(chan connRequest)
-	c := &conn{reqs: reqs, group: g}
+	c := &conn{
+		network: netAddr.Network(),
+		address: netAddr.String(),
+		reqs:    reqs,
+		group:   g,
+	}
 	go c.run(pc, reqs)
 
 	netConn = nil
@@ -1061,10 +1228,12 @@ func (g *connGroup) connect(ctx context.Context) (*conn, error) {
 }
 
 type conn struct {
-	reqs  chan<- connRequest
-	once  sync.Once
-	group *connGroup
-	timer *time.Timer
+	reqs    chan<- connRequest
+	network string
+	address string
+	once    sync.Once
+	group   *connGroup
+	timer   *time.Timer
 }
 
 func (c *conn) close() {
@@ -1117,14 +1286,14 @@ func authenticateSASL(ctx context.Context, pc *protocol.Conn, mechanism sasl.Mec
 
 	for completed := false; !completed; {
 		challenge, err := saslAuthenticateRoundTrip(pc, state)
-		switch err {
-		case nil:
-		case io.EOF:
-			// the broker may communicate a failed exchange by closing the
-			// connection (esp. in the case where we're passing opaque sasl
-			// data over the wire since there's no protocol info).
-			return SASLAuthenticationFailed
-		default:
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				// the broker may communicate a failed exchange by closing the
+				// connection (esp. in the case where we're passing opaque sasl
+				// data over the wire since there's no protocol info).
+				return SASLAuthenticationFailed
+			}
+
 			return err
 		}
 
@@ -1180,6 +1349,4 @@ func saslAuthenticateRoundTrip(pc *protocol.Conn, data []byte) ([]byte, error) {
 	return res.AuthBytes, err
 }
 
-var (
-	_ RoundTripper = (*Transport)(nil)
-)
+var _ RoundTripper = (*Transport)(nil)
