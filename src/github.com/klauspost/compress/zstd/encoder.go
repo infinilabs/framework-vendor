@@ -25,7 +25,6 @@ type Encoder struct {
 	encoders chan encoder
 	state    encoderState
 	init     sync.Once
-	sync.Mutex
 }
 
 type encoder interface {
@@ -93,9 +92,6 @@ func (e *Encoder) initialize() {
 // Reset will re-initialize the writer and new writes will encode to the supplied writer
 // as a new, independent stream.
 func (e *Encoder) Reset(w io.Writer) {
-	e.Lock()
-	defer e.Unlock()
-
 	s := &e.state
 	s.wg.Wait()
 	s.wWg.Wait()
@@ -172,8 +168,12 @@ func (e *Encoder) Write(p []byte) (n int, err error) {
 // nextBlock will synchronize and start compressing input in e.state.filling.
 // If an error has occurred during encoding it will be returned.
 func (e *Encoder) nextBlock(final bool) error {
-	e.Lock()
-	defer e.Unlock()
+
+	if final{
+		if e.state.w==nil{
+			return nil
+		}
+	}
 
 	s := &e.state
 	// Wait for current block.
@@ -330,6 +330,7 @@ func (e *Encoder) ReadFrom(r io.Reader) (n int64, err error) {
 		src = src[n2:]
 		n += int64(n2)
 		switch err {
+		case io.ErrUnexpectedEOF:
 		case io.EOF:
 			e.state.filling = e.state.filling[:len(e.state.filling)-len(src)]
 			if debug {
@@ -383,7 +384,7 @@ func (e *Encoder) Flush() error {
 // The Encoder can still be re-used after calling this.
 func (e *Encoder) Close() error {
 	s := &e.state
-	if s.encoder == nil {
+	if s.encoder == nil ||s.w==nil{
 		return nil
 	}
 	err := e.nextBlock(true)
