@@ -25,6 +25,7 @@ type Encoder struct {
 	encoders chan encoder
 	state    encoderState
 	init     sync.Once
+	sync.Mutex
 }
 
 type encoder interface {
@@ -92,6 +93,9 @@ func (e *Encoder) initialize() {
 // Reset will re-initialize the writer and new writes will encode to the supplied writer
 // as a new, independent stream.
 func (e *Encoder) Reset(w io.Writer) {
+	e.Lock()
+	defer e.Unlock()
+
 	s := &e.state
 	s.wg.Wait()
 	s.wWg.Wait()
@@ -131,6 +135,7 @@ func (e *Encoder) Reset(w io.Writer) {
 // When done writing, use Close to flush the remaining output
 // and write CRC if requested.
 func (e *Encoder) Write(p []byte) (n int, err error) {
+
 	s := &e.state
 	for len(p) > 0 {
 		if len(p)+len(s.filling) < e.o.blockSize {
@@ -167,6 +172,9 @@ func (e *Encoder) Write(p []byte) (n int, err error) {
 // nextBlock will synchronize and start compressing input in e.state.filling.
 // If an error has occurred during encoding it will be returned.
 func (e *Encoder) nextBlock(final bool) error {
+	e.Lock()
+	defer e.Unlock()
+
 	s := &e.state
 	// Wait for current block.
 	s.wg.Wait()
