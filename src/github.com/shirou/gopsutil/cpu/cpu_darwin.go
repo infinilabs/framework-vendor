@@ -1,3 +1,4 @@
+//go:build darwin
 // +build darwin
 
 package cpu
@@ -14,11 +15,11 @@ import (
 // sys/resource.h
 const (
 	CPUser    = 0
-	CPNice    = 1
-	CPSys     = 2
-	CPIntr    = 3
-	CPIdle    = 4
-	CPUStates = 5
+	cpNice    = 1
+	cpSys     = 2
+	cpIntr    = 3
+	cpIdle    = 4
+	cpUStates = 5
 )
 
 // default value. from time.h
@@ -87,10 +88,9 @@ func InfoWithContext(ctx context.Context) ([]InfoStat, error) {
 	// Use the rated frequency of the CPU. This is a static value and does not
 	// account for low power or Turbo Boost modes.
 	cpuFrequency, err := unix.SysctlUint64("hw.cpufrequency")
-	if err != nil {
-		return ret, err
+	if err == nil {
+		c.Mhz = float64(cpuFrequency) / 1000000.0
 	}
-	c.Mhz = float64(cpuFrequency) / 1000000.0
 
 	return append(ret, c), nil
 }

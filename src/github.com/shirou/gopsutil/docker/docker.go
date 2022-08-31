@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/shirou/gopsutil/cpu"
-	"github.com/shirou/gopsutil/internal/common"
+	"github.com/shirou/gopsutil/v3/cpu"
+	"github.com/shirou/gopsutil/v3/internal/common"
 )
 
-var ErrDockerNotAvailable = errors.New("docker not available")
-var ErrCgroupNotAvailable = errors.New("cgroup not available")
+var (
+	ErrDockerNotAvailable = errors.New("docker not available")
+	ErrCgroupNotAvailable = errors.New("cgroup not available")
+)
 
 var invoke common.Invoker = common.Invoke{}
 
@@ -51,7 +53,7 @@ type CgroupMemStat struct {
 	TotalUnevictable        uint64 `json:"totalUnevictable"`
 	MemUsageInBytes         uint64 `json:"memUsageInBytes"`
 	MemMaxUsageInBytes      uint64 `json:"memMaxUsageInBytes"`
-	MemLimitInBytes         uint64 `json:"memoryLimitInBbytes"`
+	MemLimitInBytes         uint64 `json:"memoryLimitInBytes"`
 	MemFailCnt              uint64 `json:"memoryFailcnt"`
 }
 

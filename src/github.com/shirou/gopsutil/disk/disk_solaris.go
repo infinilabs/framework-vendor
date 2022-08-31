@@ -1,16 +1,18 @@
+//go:build solaris
 // +build solaris
 
 package disk
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"math"
 	"os"
 	"strings"
 
-	"github.com/shirou/gopsutil/internal/common"
+	"github.com/shirou/gopsutil/v3/internal/common"
 	"golang.org/x/sys/unix"
 )
 
@@ -23,20 +25,18 @@ const (
 	_MNTTAB = "/etc/mnttab"
 )
 
-var (
-	// A blacklist of read-only virtual filesystems.  Writable filesystems are of
-	// operational concern and must not be included in this list.
-	fsTypeBlacklist = map[string]struct{}{
-		"ctfs":   struct{}{},
-		"dev":    struct{}{},
-		"fd":     struct{}{},
-		"lofs":   struct{}{},
-		"lxproc": struct{}{},
-		"mntfs":  struct{}{},
-		"objfs":  struct{}{},
-		"proc":   struct{}{},
-	}
-)
+// A blacklist of read-only virtual filesystems.  Writable filesystems are of
+// operational concern and must not be included in this list.
+var fsTypeBlacklist = map[string]struct{}{
+	"ctfs":   {},
+	"dev":    {},
+	"fd":     {},
+	"lofs":   {},
+	"lxproc": {},
+	"mntfs":  {},
+	"objfs":  {},
+	"proc":   {},
+}
 
 func PartitionsWithContext(ctx context.Context, all bool) ([]PartitionStat, error) {
 	ret := make([]PartitionStat, 0, _DEFAULT_NUM_MOUNTS)
@@ -69,7 +69,7 @@ func PartitionsWithContext(ctx context.Context, all bool) ([]PartitionStat, erro
 			Device:     fields[0],
 			Mountpoint: fields[1],
 			Fstype:     fields[2],
-			Opts:       fields[3],
+			Opts:       strings.Split(fields[3], ","),
 		})
 	}
 	if err := scanner.Err(); err != nil {
@@ -112,4 +112,36 @@ func UsageWithContext(ctx context.Context, path string) (*UsageStat, error) {
 	usageStat.UsedPercent = (float64(usageStat.Used) / float64(usageStat.Total)) * 100.0
 
 	return usageStat, nil
+}
+
+func SerialNumberWithContext(ctx context.Context, name string) (string, error) {
+	out, err := invoke.CommandWithContext(ctx, "cfgadm", "-ls", "select=type(disk),cols=ap_id:info,cols2=,noheadings")
+	if err != nil {
+		return "", fmt.Errorf("exec cfgadm: %w", err)
+	}
+
+	suf := "::" + strings.TrimPrefix(name, "/dev/")
+	s := bufio.NewScanner(bytes.NewReader(out))
+	for s.Scan() {
+		flds := strings.Fields(s.Text())
+		if strings.HasSuffix(flds[0], suf) {
+			flen := len(flds)
+			if flen >= 3 {
+				for i, f := range flds {
+					if i > 0 && i < flen-1 && f == "SN:" {
+						return flds[i+1], nil
+					}
+				}
+			}
+			return "", nil
+		}
+	}
+	if err := s.Err(); err != nil {
+		return "", err
+	}
+	return "", nil
+}
+
+func LabelWithContext(ctx context.Context, name string) (string, error) {
+	return "", common.ErrNotImplementedError
 }

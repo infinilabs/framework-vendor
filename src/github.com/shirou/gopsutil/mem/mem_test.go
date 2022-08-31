@@ -1,16 +1,17 @@
 package mem
 
 import (
+	"errors"
 	"fmt"
 	"runtime"
 	"testing"
 
-	"github.com/shirou/gopsutil/internal/common"
+	"github.com/shirou/gopsutil/v3/internal/common"
 	"github.com/stretchr/testify/assert"
 )
 
 func skipIfNotImplementedErr(t *testing.T, err error) {
-	if err == common.ErrNotImplementedError {
+	if errors.Is(err, common.ErrNotImplementedError) {
 		t.Skip("not implemented")
 	}
 }
@@ -86,7 +87,8 @@ func TestVirtualMemoryStat_String(t *testing.T) {
 		UsedPercent: 30.1,
 		Free:        40,
 	}
-	e := `{"total":10,"available":20,"used":30,"usedPercent":30.1,"free":40,"active":0,"inactive":0,"wired":0,"laundry":0,"buffers":0,"cached":0,"writeback":0,"dirty":0,"writebacktmp":0,"shared":0,"slab":0,"sreclaimable":0,"sunreclaim":0,"pagetables":0,"swapcached":0,"commitlimit":0,"committedas":0,"hightotal":0,"highfree":0,"lowtotal":0,"lowfree":0,"swaptotal":0,"swapfree":0,"mapped":0,"vmalloctotal":0,"vmallocused":0,"vmallocchunk":0,"hugepagestotal":0,"hugepagesfree":0,"hugepagesize":0}`
+	t.Log(v)
+	e := `{"total":10,"available":20,"used":30,"usedPercent":30.1,"free":40,"active":0,"inactive":0,"wired":0,"laundry":0,"buffers":0,"cached":0,"writeBack":0,"dirty":0,"writeBackTmp":0,"shared":0,"slab":0,"sreclaimable":0,"sunreclaim":0,"pageTables":0,"swapCached":0,"commitLimit":0,"committedAS":0,"highTotal":0,"highFree":0,"lowTotal":0,"lowFree":0,"swapTotal":0,"swapFree":0,"mapped":0,"vmallocTotal":0,"vmallocUsed":0,"vmallocChunk":0,"hugePagesTotal":0,"hugePagesFree":0,"hugePagesRsvd":0,"hugePagesSurp":0,"hugePageSize":0}`
 	if e != fmt.Sprintf("%v", v) {
 		t.Errorf("VirtualMemoryStat string is invalid: %v", v)
 	}
@@ -105,8 +107,34 @@ func TestSwapMemoryStat_String(t *testing.T) {
 		PgFault:     5,
 		PgMajFault:  6,
 	}
-	e := `{"total":10,"used":30,"free":40,"usedPercent":30.1,"sin":1,"sout":2,"pgin":3,"pgout":4,"pgfault":5,"pgmajfault":6}`
+	e := `{"total":10,"used":30,"free":40,"usedPercent":30.1,"sin":1,"sout":2,"pgIn":3,"pgOut":4,"pgFault":5,"pgMajFault":6}`
 	if e != fmt.Sprintf("%v", v) {
 		t.Errorf("SwapMemoryStat string is invalid: %v", v)
+	}
+}
+
+func TestSwapDevices(t *testing.T) {
+	v, err := SwapDevices()
+	skipIfNotImplementedErr(t, err)
+	if err != nil {
+		t.Fatalf("error calling SwapDevices: %v", err)
+	}
+
+	t.Logf("SwapDevices() -> %+v", v)
+
+	if len(v) == 0 {
+		t.Fatalf("no swap devices found. [this is expected if the host has swap disabled]")
+	}
+
+	for _, device := range v {
+		if device.Name == "" {
+			t.Fatalf("deviceName not set in %+v", device)
+		}
+		if device.FreeBytes == 0 {
+			t.Logf("[WARNING] free-bytes is zero in %+v. This might be expected", device)
+		}
+		if device.UsedBytes == 0 {
+			t.Logf("[WARNING] used-bytes is zero in %+v. This might be expected", device)
+		}
 	}
 }

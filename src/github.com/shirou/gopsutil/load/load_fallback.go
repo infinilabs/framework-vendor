@@ -1,11 +1,12 @@
-// +build !darwin,!linux,!freebsd,!openbsd,!windows,!solaris
+//go:build !darwin && !linux && !freebsd && !openbsd && !windows && !solaris && !aix
+// +build !darwin,!linux,!freebsd,!openbsd,!windows,!solaris,!aix
 
 package load
 
 import (
 	"context"
 
-	"github.com/shirou/gopsutil/internal/common"
+	"github.com/shirou/gopsutil/v3/internal/common"
 )
 
 func Avg() (*AvgStat, error) {

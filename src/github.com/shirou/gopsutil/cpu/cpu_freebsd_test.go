@@ -5,7 +5,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/shirou/gopsutil/internal/common"
+	"github.com/shirou/gopsutil/v3/internal/common"
 )
 
 func TestParseDmesgBoot(t *testing.T) {
@@ -13,7 +13,7 @@ func TestParseDmesgBoot(t *testing.T) {
 		t.SkipNow()
 	}
 
-	var cpuTests = []struct {
+	cpuTests := []struct {
 		file   string
 		cpuNum int
 		cores  int32
