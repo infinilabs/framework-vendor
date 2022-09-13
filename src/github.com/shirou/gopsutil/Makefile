@@ -18,8 +18,10 @@ build_test:  ## test only buildable
 	GOOS=linux GOARCH=arm go test ./... | $(BUILD_FAIL_PATTERN)
 	GOOS=linux GOARCH=arm64 go test ./... | $(BUILD_FAIL_PATTERN)
 	GOOS=linux GOARCH=riscv64 go test ./... | $(BUILD_FAIL_PATTERN)
-	GOOS=freebsd go test ./... | $(BUILD_FAIL_PATTERN)
+	GOOS=freebsd GOARCH=amd64 go test ./... | $(BUILD_FAIL_PATTERN)
+	GOOS=freebsd GOARCH=386 go test ./... | $(BUILD_FAIL_PATTERN)
 	GOOS=freebsd GOARCH=arm go test ./... | $(BUILD_FAIL_PATTERN)
+	GOOS=freebsd GOARCH=arm64 go test ./... | $(BUILD_FAIL_PATTERN)
 	CGO_ENABLED=0 GOOS=darwin go test ./... | $(BUILD_FAIL_PATTERN)
 	GOOS=windows go test ./... | $(BUILD_FAIL_PATTERN)
 	# Operating systems supported for building only (not implemented error if used)
@@ -28,6 +30,7 @@ build_test:  ## test only buildable
 	GOOS=netbsd go test ./... | $(BUILD_FAIL_PATTERN)
 	# cross build to OpenBSD not worked since process has "C"
 #	GOOS=openbsd go test ./... | $(BUILD_FAIL_PATTERN)
+	GOOS=plan9 go test ./... | $(BUILD_FAIL_PATTERN)
 
 ifeq ($(shell uname -s), Darwin)
 	CGO_ENABLED=1 GOOS=darwin go test ./... | $(BUILD_FAIL_PATTERN)
@@ -36,7 +39,6 @@ endif
 
 vet:
 	GOOS=darwin GOARCH=amd64 go vet ./...
-	GOOS=darwin GOARCH=386 go vet ./...
 	GOOS=darwin GOARCH=arm64 go vet ./...
 
 	GOOS=dragonfly GOARCH=amd64 go vet ./...
@@ -67,9 +69,18 @@ vet:
 	GOOS=windows GOARCH=amd64 go vet ./...
 	GOOS=windows GOARCH=386 go vet ./...
 
+	GOOS=plan9 GOARCH=amd64 go vet ./...
+	GOOS=plan9 GOARCH=386 go vet ./...
+
 macos_test:
 	CGO_ENABLED=0 GOOS=darwin go test ./... | $(BUILD_FAIL_PATTERN)
 	CGO_ENABLED=1 GOOS=darwin go test ./... | $(BUILD_FAIL_PATTERN)
 
 init_tools:
 	go get github.com/golang/dep/cmd/dep
+
+TAG=$(shell date +'v3.%y.%-m' --date='last Month')
+
+release:
+	git tag $(TAG)
+	git push origin $(TAG)

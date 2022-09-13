@@ -1,3 +1,4 @@
+//go:build freebsd
 // +build freebsd
 
 package host
@@ -12,8 +13,8 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/shirou/gopsutil/internal/common"
-	"github.com/shirou/gopsutil/process"
+	"github.com/shirou/gopsutil/v3/internal/common"
+	"github.com/shirou/gopsutil/v3/process"
 	"golang.org/x/sys/unix"
 )
 
@@ -81,7 +82,6 @@ func UsersWithContext(ctx context.Context) ([]UserStat, error) {
 	}
 
 	return ret, nil
-
 }
 
 func PlatformInformationWithContext(ctx context.Context) (string, string, string, error) {

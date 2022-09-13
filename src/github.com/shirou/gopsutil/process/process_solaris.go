@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/shirou/gopsutil/cpu"
-	"github.com/shirou/gopsutil/internal/common"
-	"github.com/shirou/gopsutil/net"
+	"github.com/shirou/gopsutil/v3/cpu"
+	"github.com/shirou/gopsutil/v3/internal/common"
+	"github.com/shirou/gopsutil/v3/net"
 )
 
 type MemoryMapsStat struct {
@@ -27,8 +27,7 @@ type MemoryMapsStat struct {
 	Swap         uint64 `json:"swap"`
 }
 
-type MemoryInfoExStat struct {
-}
+type MemoryInfoExStat struct{}
 
 func pidsWithContext(ctx context.Context) ([]int32, error) {
 	return readPidsFromDir(common.HostProc())
@@ -89,12 +88,8 @@ func (p *Process) CwdWithContext(ctx context.Context) (string, error) {
 	return p.fillFromPathCwdWithContext(ctx)
 }
 
-func (p *Process) ParentWithContext(ctx context.Context) (*Process, error) {
-	return nil, common.ErrNotImplementedError
-}
-
-func (p *Process) StatusWithContext(ctx context.Context) (string, error) {
-	return "", common.ErrNotImplementedError
+func (p *Process) StatusWithContext(ctx context.Context) ([]string, error) {
+	return []string{""}, common.ErrNotImplementedError
 }
 
 func (p *Process) ForegroundWithContext(ctx context.Context) (bool, error) {
@@ -188,10 +183,6 @@ func (p *Process) ConnectionsWithContext(ctx context.Context) ([]net.ConnectionS
 
 func (p *Process) ConnectionsMaxWithContext(ctx context.Context, max int) ([]net.ConnectionStat, error) {
 	return nil, common.ErrNotImplementedError
-}
-
-func (p *Process) NetIOCountersWithContext(ctx context.Context, pernic bool) ([]net.IOCountersStat, error) {
-       return nil, common.ErrNotImplementedError
 }
 
 func (p *Process) MemoryMapsWithContext(ctx context.Context, grouped bool) (*[]MemoryMapsStat, error) {

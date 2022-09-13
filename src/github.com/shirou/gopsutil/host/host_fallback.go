@@ -1,3 +1,4 @@
+//go:build !darwin && !linux && !freebsd && !openbsd && !solaris && !windows
 // +build !darwin,!linux,!freebsd,!openbsd,!solaris,!windows
 
 package host
@@ -5,7 +6,7 @@ package host
 import (
 	"context"
 
-	"github.com/shirou/gopsutil/internal/common"
+	"github.com/shirou/gopsutil/v3/internal/common"
 )
 
 func HostIDWithContext(ctx context.Context) (string, error) {

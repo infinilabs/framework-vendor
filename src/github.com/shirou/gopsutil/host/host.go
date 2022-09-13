@@ -3,11 +3,12 @@ package host
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"runtime"
 	"time"
 
-	"github.com/shirou/gopsutil/internal/common"
+	"github.com/shirou/gopsutil/v3/internal/common"
 )
 
 var invoke common.Invoker = common.Invoke{}
@@ -27,7 +28,7 @@ type InfoStat struct {
 	KernelArch           string `json:"kernelArch"`      // native cpu architecture queried at runtime, as returned by `uname -m` or empty string in case of error
 	VirtualizationSystem string `json:"virtualizationSystem"`
 	VirtualizationRole   string `json:"virtualizationRole"` // guest or host
-	HostID               string `json:"hostid"`             // ex: uuid
+	HostID               string `json:"hostId"`             // ex: uuid
 }
 
 type UserStat struct {
@@ -39,7 +40,9 @@ type UserStat struct {
 
 type TemperatureStat struct {
 	SensorKey   string  `json:"sensorKey"`
-	Temperature float64 `json:"sensorTemperature"`
+	Temperature float64 `json:"temperature"`
+	High        float64 `json:"sensorHigh"`
+	Critical    float64 `json:"sensorCritical"`
 }
 
 func (h InfoStat) String() string {
@@ -68,47 +71,47 @@ func InfoWithContext(ctx context.Context) (*InfoStat, error) {
 	}
 
 	ret.Hostname, err = os.Hostname()
-	if err != nil && err != common.ErrNotImplementedError {
+	if err != nil && !errors.Is(err, common.ErrNotImplementedError) {
 		return nil, err
 	}
 
 	ret.Platform, ret.PlatformFamily, ret.PlatformVersion, err = PlatformInformationWithContext(ctx)
-	if err != nil && err != common.ErrNotImplementedError {
+	if err != nil && !errors.Is(err, common.ErrNotImplementedError) {
 		return nil, err
 	}
 
 	ret.KernelVersion, err = KernelVersionWithContext(ctx)
-	if err != nil && err != common.ErrNotImplementedError {
+	if err != nil && !errors.Is(err, common.ErrNotImplementedError) {
 		return nil, err
 	}
 
 	ret.KernelArch, err = KernelArch()
-	if err != nil && err != common.ErrNotImplementedError {
+	if err != nil && !errors.Is(err, common.ErrNotImplementedError) {
 		return nil, err
 	}
 
 	ret.VirtualizationSystem, ret.VirtualizationRole, err = VirtualizationWithContext(ctx)
-	if err != nil && err != common.ErrNotImplementedError {
+	if err != nil && !errors.Is(err, common.ErrNotImplementedError) {
 		return nil, err
 	}
 
 	ret.BootTime, err = BootTimeWithContext(ctx)
-	if err != nil && err != common.ErrNotImplementedError {
+	if err != nil && !errors.Is(err, common.ErrNotImplementedError) {
 		return nil, err
 	}
 
 	ret.Uptime, err = UptimeWithContext(ctx)
-	if err != nil && err != common.ErrNotImplementedError {
+	if err != nil && !errors.Is(err, common.ErrNotImplementedError) {
 		return nil, err
 	}
 
 	ret.Procs, err = numProcs(ctx)
-	if err != nil && err != common.ErrNotImplementedError {
+	if err != nil && !errors.Is(err, common.ErrNotImplementedError) {
 		return nil, err
 	}
 
 	ret.HostID, err = HostIDWithContext(ctx)
-	if err != nil && err != common.ErrNotImplementedError {
+	if err != nil && !errors.Is(err, common.ErrNotImplementedError) {
 		return nil, err
 	}
 

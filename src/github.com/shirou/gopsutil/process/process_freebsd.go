@@ -1,3 +1,4 @@
+//go:build freebsd
 // +build freebsd
 
 package process
@@ -5,14 +6,13 @@ package process
 import (
 	"bytes"
 	"context"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 
-	cpu "github.com/shirou/gopsutil/cpu"
-	"github.com/shirou/gopsutil/internal/common"
-	net "github.com/shirou/gopsutil/net"
+	cpu "github.com/shirou/gopsutil/v3/cpu"
+	"github.com/shirou/gopsutil/v3/internal/common"
+	net "github.com/shirou/gopsutil/v3/net"
 	"golang.org/x/sys/unix"
 )
 
@@ -64,6 +64,10 @@ func (p *Process) NameWithContext(ctx context.Context) (string, error) {
 	return name, nil
 }
 
+func (p *Process) CwdWithContext(ctx context.Context) (string, error) {
+	return "", common.ErrNotImplementedError
+}
+
 func (p *Process) ExeWithContext(ctx context.Context) (string, error) {
 	return "", common.ErrNotImplementedError
 }
@@ -106,47 +110,43 @@ func (p *Process) CmdlineSliceWithContext(ctx context.Context) ([]string, error)
 }
 
 func (p *Process) createTimeWithContext(ctx context.Context) (int64, error) {
-	return 0, common.ErrNotImplementedError
-}
-
-func (p *Process) ParentWithContext(ctx context.Context) (*Process, error) {
-	return nil, common.ErrNotImplementedError
-}
-
-func (p *Process) StatusWithContext(ctx context.Context) (string, error) {
 	k, err := p.getKProc()
 	if err != nil {
-		return "", err
+		return 0, err
+	}
+	return int64(k.Start.Sec)*1000 + int64(k.Start.Usec)/1000, nil
+}
+
+func (p *Process) StatusWithContext(ctx context.Context) ([]string, error) {
+	k, err := p.getKProc()
+	if err != nil {
+		return []string{""}, err
 	}
 	var s string
 	switch k.Stat {
 	case SIDL:
-		s = "I"
+		s = Idle
 	case SRUN:
-		s = "R"
+		s = Running
 	case SSLEEP:
-		s = "S"
+		s = Sleep
 	case SSTOP:
-		s = "T"
+		s = Stop
 	case SZOMB:
-		s = "Z"
+		s = Zombie
 	case SWAIT:
-		s = "W"
+		s = Wait
 	case SLOCK:
-		s = "L"
+		s = Lock
 	}
 
-	return s, nil
+	return []string{s}, nil
 }
 
 func (p *Process) ForegroundWithContext(ctx context.Context) (bool, error) {
 	// see https://github.com/shirou/gopsutil/issues/596#issuecomment-432707831 for implementation details
 	pid := p.Pid
-	ps, err := exec.LookPath("ps")
-	if err != nil {
-		return false, err
-	}
-	out, err := invoke.CommandWithContext(ctx, ps, "-o", "stat=", "-p", strconv.Itoa(int(pid)))
+	out, err := invoke.CommandWithContext(ctx, "ps", "-o", "stat=", "-p", strconv.Itoa(int(pid)))
 	if err != nil {
 		return false, err
 	}

@@ -1,3 +1,4 @@
+//go:build windows
 // +build windows
 
 package disk
@@ -9,8 +10,9 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/shirou/gopsutil/internal/common"
+	"github.com/shirou/gopsutil/v3/internal/common"
 	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/registry"
 )
 
 var (
@@ -21,8 +23,8 @@ var (
 )
 
 var (
-	FileFileCompression = int64(16)     // 0x00000010
-	FileReadOnlyVolume  = int64(524288) // 0x00080000
+	fileFileCompression = int64(16)     // 0x00000010
+	fileReadOnlyVolume  = int64(524288) // 0x00080000
 )
 
 // diskPerformance is an equivalent representation of DISK_PERFORMANCE in the Windows API.
@@ -41,6 +43,14 @@ type diskPerformance struct {
 	StorageDeviceNumber uint32
 	StorageManagerName  [8]uint16
 	alignmentPadding    uint32 // necessary for 32bit support, see https://github.com/elastic/beats/pull/16553
+}
+
+func init() {
+	// enable disk performance counters on Windows Server editions (needs to run as admin)
+	key, err := registry.OpenKey(registry.LOCAL_MACHINE, `SYSTEM\CurrentControlSet\Services\PartMgr`, registry.SET_VALUE)
+	if err == nil {
+		key.SetDWordValue("EnableCounterForIoctl", 1)
+	}
 }
 
 func UsageWithContext(ctx context.Context, path string) (*UsageStat, error) {
@@ -106,16 +116,16 @@ func PartitionsWithContext(ctx context.Context, all bool) ([]PartitionStat, erro
 					uintptr(len(lpFileSystemNameBuffer)))
 				if driveret == 0 {
 					if typeret == 5 || typeret == 2 {
-						continue //device is not ready will happen if there is no disk in the drive
+						continue // device is not ready will happen if there is no disk in the drive
 					}
 					return ret, err
 				}
-				opts := "rw"
-				if lpFileSystemFlags&FileReadOnlyVolume != 0 {
-					opts = "ro"
+				opts := []string{"rw"}
+				if lpFileSystemFlags&fileReadOnlyVolume != 0 {
+					opts = []string{"ro"}
 				}
-				if lpFileSystemFlags&FileFileCompression != 0 {
-					opts += ".compress"
+				if lpFileSystemFlags&fileFileCompression != 0 {
+					opts = append(opts, "compress")
 				}
 
 				d := PartitionStat{
@@ -180,4 +190,12 @@ func IOCountersWithContext(ctx context.Context, names ...string) (map[string]IOC
 		}
 	}
 	return drivemap, nil
+}
+
+func SerialNumberWithContext(ctx context.Context, name string) (string, error) {
+	return "", common.ErrNotImplementedError
+}
+
+func LabelWithContext(ctx context.Context, name string) (string, error) {
+	return "", common.ErrNotImplementedError
 }

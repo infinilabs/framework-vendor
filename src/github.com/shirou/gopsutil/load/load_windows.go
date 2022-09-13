@@ -1,3 +1,4 @@
+//go:build windows
 // +build windows
 
 package load
@@ -9,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/shirou/gopsutil/internal/common"
+	"github.com/shirou/gopsutil/v3/internal/common"
 )
 
 var (

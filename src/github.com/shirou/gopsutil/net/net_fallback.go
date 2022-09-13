@@ -1,3 +1,4 @@
+//go:build !aix && !darwin && !linux && !freebsd && !openbsd && !windows
 // +build !aix,!darwin,!linux,!freebsd,!openbsd,!windows
 
 package net
@@ -5,7 +6,7 @@ package net
 import (
 	"context"
 
-	"github.com/shirou/gopsutil/internal/common"
+	"github.com/shirou/gopsutil/v3/internal/common"
 )
 
 func IOCounters(pernic bool) ([]IOCountersStat, error) {
