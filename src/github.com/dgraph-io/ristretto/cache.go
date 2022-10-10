@@ -26,6 +26,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/dgraph-io/ristretto/z"
 )
@@ -36,6 +37,8 @@ var (
 )
 
 type itemCallback func(*Item)
+
+const itemSize = int64(unsafe.Sizeof(storeItem{}))
 
 // Cache is a thread-safe implementation of a hashmap with a TinyLFU admission
 // policy and a Sampled LFU eviction policy. You can use the same Cache instance
@@ -63,8 +66,13 @@ type Cache struct {
 	keyToHash func(interface{}) (uint64, uint64)
 	// stop is used to stop the processItems goroutine.
 	stop chan struct{}
+	// indicates whether cache is closed.
+	isClosed bool
 	// cost calculates cost from a value.
 	cost func(value interface{}) int64
+	// ignoreInternalCost dictates whether to ignore the cost of internally storing
+	// the item in the cost calculation.
+	ignoreInternalCost bool
 	// cleanupTicker is used to periodically check for entries whose TTL has passed.
 	cleanupTicker *time.Ticker
 	// Metrics contains a running log of important statistics like hits, misses,
@@ -80,8 +88,11 @@ type Config struct {
 	// accuracy and subsequent hit ratios.
 	//
 	// For example, if you expect your cache to hold 1,000,000 items when full,
-	// NumCounters should be 10,000,000 (10x). Each counter takes up 4 bits, so
-	// keeping 10,000,000 counters would require 5MB of memory.
+	// NumCounters should be 10,000,000 (10x). Each counter takes up roughly
+	// 3 bytes (4 bits for each counter * 4 copies plus about a byte per
+	// counter for the bloom filter). Note that the number of counters is
+	// internally rounded up to the nearest power of 2, so the space usage
+	// may be a little larger than 3 bytes * NumCounters.
 	NumCounters int64
 	// MaxCost can be considered as the cache capacity, in whatever units you
 	// choose to use.
@@ -119,6 +130,11 @@ type Config struct {
 	// is ran after Set is called for a new item or an item update with a cost
 	// param of 0.
 	Cost func(value interface{}) int64
+	// IgnoreInternalCost set to true indicates to the cache that the cost of
+	// internally storing the value should be ignored. This is useful when the
+	// cost passed to set is not using bytes as units. Keep in mind that setting
+	// this to true will increase the memory usage.
+	IgnoreInternalCost bool
 }
 
 type itemFlag byte
@@ -152,14 +168,15 @@ func NewCache(config *Config) (*Cache, error) {
 	}
 	policy := newPolicy(config.NumCounters, config.MaxCost)
 	cache := &Cache{
-		store:         newStore(),
-		policy:        policy,
-		getBuf:        newRingBuffer(policy, config.BufferItems),
-		setBuf:        make(chan *Item, setBufSize),
-		keyToHash:     config.KeyToHash,
-		stop:          make(chan struct{}),
-		cost:          config.Cost,
-		cleanupTicker: time.NewTicker(time.Duration(bucketDurationSecs) * time.Second / 2),
+		store:              newStore(),
+		policy:             policy,
+		getBuf:             newRingBuffer(policy, config.BufferItems),
+		setBuf:             make(chan *Item, setBufSize),
+		keyToHash:          config.KeyToHash,
+		stop:               make(chan struct{}),
+		cost:               config.Cost,
+		ignoreInternalCost: config.IgnoreInternalCost,
+		cleanupTicker:      time.NewTicker(time.Duration(bucketDurationSecs) * time.Second / 2),
 	}
 	cache.onExit = func(val interface{}) {
 		if config.OnExit != nil && val != nil {
@@ -192,7 +209,7 @@ func NewCache(config *Config) (*Cache, error) {
 }
 
 func (c *Cache) Wait() {
-	if c == nil {
+	if c == nil || c.isClosed {
 		return
 	}
 	wg := &sync.WaitGroup{}
@@ -205,7 +222,7 @@ func (c *Cache) Wait() {
 // value was found or not. The value can be nil and the boolean can be true at
 // the same time.
 func (c *Cache) Get(key interface{}) (interface{}, bool) {
-	if c == nil || key == nil {
+	if c == nil || c.isClosed || key == nil {
 		return nil, false
 	}
 	keyHash, conflictHash := c.keyToHash(key)
@@ -237,7 +254,7 @@ func (c *Cache) Set(key, value interface{}, cost int64) bool {
 // expires, which is identical to calling Set. A negative value is a no-op and the value
 // is discarded.
 func (c *Cache) SetWithTTL(key, value interface{}, cost int64, ttl time.Duration) bool {
-	if c == nil || key == nil {
+	if c == nil || c.isClosed || key == nil {
 		return false
 	}
 
@@ -286,7 +303,7 @@ func (c *Cache) SetWithTTL(key, value interface{}, cost int64, ttl time.Duration
 
 // Del deletes the key-value item from the cache if it exists.
 func (c *Cache) Del(key interface{}) {
-	if c == nil || key == nil {
+	if c == nil || c.isClosed || key == nil {
 		return
 	}
 	keyHash, conflictHash := c.keyToHash(key)
@@ -304,24 +321,53 @@ func (c *Cache) Del(key interface{}) {
 	}
 }
 
+// GetTTL returns the TTL for the specified key and a bool that is true if the
+// item was found and is not expired.
+func (c *Cache) GetTTL(key interface{}) (time.Duration, bool) {
+	if c == nil || key == nil {
+		return 0, false
+	}
+
+	keyHash, conflictHash := c.keyToHash(key)
+	if _, ok := c.store.Get(keyHash, conflictHash); !ok {
+		// not found
+		return 0, false
+	}
+
+	expiration := c.store.Expiration(keyHash)
+	if expiration.IsZero() {
+		// found but no expiration
+		return 0, true
+	}
+
+	if time.Now().After(expiration) {
+		// found but expired
+		return 0, false
+	}
+
+	return time.Until(expiration), true
+}
+
 // Close stops all goroutines and closes all channels.
 func (c *Cache) Close() {
-	if c == nil || c.stop == nil {
+	if c == nil || c.isClosed {
 		return
 	}
+	c.Clear()
+
 	// Block until processItems goroutine is returned.
 	c.stop <- struct{}{}
 	close(c.stop)
-	c.stop = nil
 	close(c.setBuf)
 	c.policy.Close()
+	c.isClosed = true
 }
 
 // Clear empties the hashmap and zeroes all policy counters. Note that this is
 // not an atomic operation (but that shouldn't be a problem as it's assumed that
 // Set/Get calls won't be occurring until after this).
 func (c *Cache) Clear() {
-	if c == nil {
+	if c == nil || c.isClosed {
 		return
 	}
 	// Block until processItems goroutine is returned.
@@ -332,6 +378,10 @@ loop:
 	for {
 		select {
 		case i := <-c.setBuf:
+			if i.wg != nil {
+				i.wg.Done()
+				continue
+			}
 			if i.flag != itemUpdate {
 				// In itemUpdate, the value is already set in the store.  So, no need to call
 				// onEvict here.
@@ -351,6 +401,22 @@ loop:
 	}
 	// Restart processItems goroutine.
 	go c.processItems()
+}
+
+// MaxCost returns the max cost of the cache.
+func (c *Cache) MaxCost() int64 {
+	if c == nil {
+		return 0
+	}
+	return c.policy.MaxCost()
+}
+
+// UpdateMaxCost updates the maxCost of an existing cache.
+func (c *Cache) UpdateMaxCost(maxCost int64) {
+	if c == nil {
+		return
+	}
+	c.policy.UpdateMaxCost(maxCost)
 }
 
 // processItems is ran by goroutines processing the Set buffer.
@@ -393,6 +459,11 @@ func (c *Cache) processItems() {
 			if i.Cost == 0 && c.cost != nil && i.flag != itemDelete {
 				i.Cost = c.cost(i.Value)
 			}
+			if !c.ignoreInternalCost {
+				// Add the cost of internally storing the object.
+				i.Cost += itemSize
+			}
+
 			switch i.flag {
 			case itemNew:
 				victims, added := c.policy.Add(i.Key, i.Cost)

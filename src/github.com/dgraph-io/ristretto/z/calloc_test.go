@@ -17,11 +17,14 @@
 package z
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
 
 	"math/rand"
+
+	"github.com/stretchr/testify/require"
 )
 
 // $ go test -failfast -run xxx -bench . -benchmem  -count 10 > out.txt
@@ -65,10 +68,40 @@ func BenchmarkAllocation(b *testing.B) {
 			r := rand.New(source)
 			for pb.Next() {
 				sz := r.Intn(100) << 10
-				x := Calloc(sz)
+				x := Calloc(sz, "test")
 				r.Read(x)
 				Free(x)
 			}
 		})
 	})
+}
+
+func TestCalloc(t *testing.T) {
+	// Check if we're using jemalloc.
+	// JE_MALLOC_CONF="abort:true,tcache:false"
+
+	StatsPrint()
+	buf := CallocNoRef(1, "test")
+	if len(buf) == 0 {
+		t.Skipf("Not using jemalloc. Skipping test.")
+	}
+	Free(buf)
+	require.Equal(t, int64(0), NumAllocBytes())
+
+	buf1 := Calloc(128, "test")
+	require.Equal(t, int64(128), NumAllocBytes())
+	buf2 := Calloc(128, "test")
+	require.Equal(t, int64(256), NumAllocBytes())
+
+	Free(buf1)
+	require.Equal(t, int64(128), NumAllocBytes())
+
+	// _ = buf2
+	Free(buf2)
+	require.Equal(t, int64(0), NumAllocBytes())
+	fmt.Println(Leaks())
+
+	// Double free would panic when debug mode is enabled in jemalloc.
+	// Free(buf2)
+	// require.Equal(t, int64(0), NumAllocBytes())
 }

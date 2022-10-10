@@ -19,6 +19,7 @@ package ristretto
 import (
 	"math"
 	"sync"
+	"sync/atomic"
 
 	"github.com/dgraph-io/ristretto/z"
 )
@@ -55,6 +56,10 @@ type policy interface {
 	CollectMetrics(*Metrics)
 	// Clear zeroes out all counters and clears hashmaps.
 	Clear()
+	// MaxCost returns the current max cost of the cache policy.
+	MaxCost() int64
+	// UpdateMaxCost updates the max cost of the cache policy.
+	UpdateMaxCost(int64)
 }
 
 func newPolicy(numCounters, maxCost int64) policy {
@@ -63,11 +68,12 @@ func newPolicy(numCounters, maxCost int64) policy {
 
 type defaultPolicy struct {
 	sync.Mutex
-	admit   *tinyLFU
-	evict   *sampledLFU
-	itemsCh chan []uint64
-	stop    chan struct{}
-	metrics *Metrics
+	admit    *tinyLFU
+	evict    *sampledLFU
+	itemsCh  chan []uint64
+	stop     chan struct{}
+	isClosed bool
+	metrics  *Metrics
 }
 
 func newDefaultPolicy(numCounters, maxCost int64) *defaultPolicy {
@@ -105,9 +111,14 @@ func (p *defaultPolicy) processItems() {
 }
 
 func (p *defaultPolicy) Push(keys []uint64) bool {
+	if p.isClosed {
+		return false
+	}
+
 	if len(keys) == 0 {
 		return true
 	}
+
 	select {
 	case p.itemsCh <- keys:
 		p.metrics.add(keepGets, keys[0], uint64(len(keys)))
@@ -126,7 +137,7 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]*Item, bool) {
 	defer p.Unlock()
 
 	// Cannot add an item bigger than entire cache.
-	if cost > p.evict.maxCost {
+	if cost > p.evict.getMaxCost() {
 		return nil, false
 	}
 
@@ -212,7 +223,7 @@ func (p *defaultPolicy) Del(key uint64) {
 
 func (p *defaultPolicy) Cap() int64 {
 	p.Lock()
-	capacity := int64(p.evict.maxCost - p.evict.used)
+	capacity := int64(p.evict.getMaxCost() - p.evict.used)
 	p.Unlock()
 	return capacity
 }
@@ -241,18 +252,43 @@ func (p *defaultPolicy) Clear() {
 }
 
 func (p *defaultPolicy) Close() {
+	if p.isClosed {
+		return
+	}
+
 	// Block until the p.processItems goroutine returns.
 	p.stop <- struct{}{}
 	close(p.stop)
 	close(p.itemsCh)
+	p.isClosed = true
+}
+
+func (p *defaultPolicy) MaxCost() int64 {
+	if p == nil || p.evict == nil {
+		return 0
+	}
+	return p.evict.getMaxCost()
+}
+
+func (p *defaultPolicy) UpdateMaxCost(maxCost int64) {
+	if p == nil || p.evict == nil {
+		return
+	}
+	p.evict.updateMaxCost(maxCost)
 }
 
 // sampledLFU is an eviction helper storing key-cost pairs.
 type sampledLFU struct {
-	keyCosts map[uint64]int64
+	// NOTE: align maxCost to 64-bit boundary for use with atomic.
+	// As per https://golang.org/pkg/sync/atomic/: "On ARM, x86-32,
+	// and 32-bit MIPS, it is the caller’s responsibility to arrange
+	// for 64-bit alignment of 64-bit words accessed atomically.
+	// The first word in a variable or in an allocated struct, array,
+	// or slice can be relied upon to be 64-bit aligned."
 	maxCost  int64
 	used     int64
 	metrics  *Metrics
+	keyCosts map[uint64]int64
 }
 
 func newSampledLFU(maxCost int64) *sampledLFU {
@@ -262,8 +298,16 @@ func newSampledLFU(maxCost int64) *sampledLFU {
 	}
 }
 
+func (p *sampledLFU) getMaxCost() int64 {
+	return atomic.LoadInt64(&p.maxCost)
+}
+
+func (p *sampledLFU) updateMaxCost(maxCost int64) {
+	atomic.StoreInt64(&p.maxCost, maxCost)
+}
+
 func (p *sampledLFU) roomLeft(cost int64) int64 {
-	return p.maxCost - (p.used + cost)
+	return p.getMaxCost() - (p.used + cost)
 }
 
 func (p *sampledLFU) fillSample(in []*policyPair) []*policyPair {
