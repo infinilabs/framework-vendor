@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/shirou/gopsutil/internal/common"
+	"github.com/shirou/gopsutil/v3/internal/common"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -21,10 +21,10 @@ func TestIOCountersByFileParsing(t *testing.T) {
 	assert.Nil(t, err, "Temporary file creation failed: ", err)
 
 	cases := [4][2]string{
-		[2]string{"eth0:   ", "eth1:   "},
-		[2]string{"eth0:0:   ", "eth1:0:   "},
-		[2]string{"eth0:", "eth1:"},
-		[2]string{"eth0:0:", "eth1:0:"},
+		{"eth0:   ", "eth1:   "},
+		{"eth0:0:   ", "eth1:0:   "},
+		{"eth0:", "eth1:"},
+		{"eth0:0:", "eth1:0:"},
 	}
 	for _, testCase := range cases {
 		err = tmpfile.Truncate(0)
@@ -82,18 +82,18 @@ func TestGetProcInodesAll(t *testing.T) {
 	go func() { // TCP listening goroutine to have some opened inodes even in CI
 		addr, err := net.ResolveTCPAddr("tcp", "localhost:0") // dynamically get a random open port from OS
 		if err != nil {
-			t.Skip("unable to resolve localhost:", err)
+			t.Skipf("unable to resolve localhost: %v", err)
 		}
 		l, err := net.ListenTCP(addr.Network(), addr)
 		if err != nil {
-			t.Skip(fmt.Sprintf("unable to listen on %v: %v", addr, err))
+			t.Skipf("unable to listen on %v: %v", addr, err)
 		}
 		defer l.Close()
 		waitForServer <- true
 		for {
 			conn, err := l.Accept()
 			if err != nil {
-				t.Skip("unable to accept connection:", err)
+				t.Skipf("unable to accept connection: %v", err)
 			}
 			defer conn.Close()
 		}
@@ -137,14 +137,6 @@ func TestDecodeAddress(t *testing.T) {
 	assert := assert.New(t)
 
 	addr := map[string]AddrTest{
-		"0500000A:0016": {
-			IP:   "10.0.0.5",
-			Port: 22,
-		},
-		"0100007F:D1C2": {
-			IP:   "127.0.0.1",
-			Port: 53698,
-		},
 		"11111:0035": {
 			Error: true,
 		},
@@ -158,6 +150,25 @@ func TestDecodeAddress(t *testing.T) {
 		"00855210011307F025401:0035": {
 			Error: true,
 		},
+	}
+	if common.IsLittleEndian() {
+		addr["0500000A:0016"] = AddrTest{
+			IP:   "10.0.0.5",
+			Port: 22,
+		}
+		addr["0100007F:D1C2"] = AddrTest{
+			IP:   "127.0.0.1",
+			Port: 53698,
+		}
+	} else {
+		addr["0A000005:0016"] = AddrTest{
+			IP:   "10.0.0.5",
+			Port: 22,
+		}
+		addr["7F000001:D1C2"] = AddrTest{
+			IP:   "127.0.0.1",
+			Port: 53698,
+		}
 	}
 
 	for src, dst := range addr {
@@ -187,7 +198,7 @@ func TestConntrackStatFileParsing(t *testing.T) {
 	assert.Nil(t, err, "Temporary file creation failed: ", err)
 
 	data := []byte(`
-entries  searched found new invalid ignore delete delete_list insert insert_failed drop early_drop icmp_error  expect_new expect_create expect_delete search_restart
+entries  searched found new invalid ignore delete deleteList insert insertFailed drop earlyDrop icmpError  expectNew expectCreate expectDelete searchRestart
 0000007b  00000000 00000000 00000000 000b115a 00000084 00000000 00000000 00000000 00000000 00000000 00000000 00000000  00000000 00000000 00000000 0000004a
 0000007b  00000000 00000000 00000000 0007eee5 00000068 00000000 00000000 00000000 00000000 00000000 00000000 00000000  00000000 00000000 00000000 00000035
 0000007b  00000000 00000000 00000000 0090346b 00000057 00000000 00000000 00000000 00000000 00000000 00000000 00000000  00000000 00000000 00000000 00000025

@@ -16,19 +16,17 @@ static int getdrivestat(io_registry_entry_t d, DriveStats *stat);
 static int fillstat(io_registry_entry_t d, DriveStats *stat);
 
 int
-readdrivestat(DriveStats a[], int n)
+gopsutil_v3_readdrivestat(DriveStats a[], int n)
 {
-	mach_port_t port;
 	CFMutableDictionaryRef match;
 	io_iterator_t drives;
 	io_registry_entry_t d;
 	kern_return_t status;
 	int na, rv;
 
-	IOMasterPort(bootstrap_port, &port);
 	match = IOServiceMatching("IOMedia");
 	CFDictionaryAddValue(match, CFSTR(kIOMediaWholeKey), kCFBooleanTrue);
-	status = IOServiceGetMatchingServices(port, match, &drives);
+	status = IOServiceGetMatchingServices(0, match, &drives);
 	if(status != KERN_SUCCESS)
 		return -1;
 

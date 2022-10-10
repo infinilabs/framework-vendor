@@ -1,4 +1,6 @@
+//go:build ignore
 // +build ignore
+
 // Hand writing: _Ctype_struct___0
 
 /*
@@ -38,14 +40,14 @@ const (
 	sizeofLongLong   = C.sizeof_longlong
 	sizeofLongDouble = C.sizeof_longlong
 
-	DEVSTAT_NO_DATA = 0x00
-	DEVSTAT_READ    = 0x01
-	DEVSTAT_WRITE   = 0x02
-	DEVSTAT_FREE    = 0x03
+	devstat_NO_DATA = 0x00
+	devstat_READ    = 0x01
+	devstat_WRITE   = 0x02
+	devstat_FREE    = 0x03
 )
 
 const (
-	sizeOfDevstat = C.sizeof_struct_devstat
+	sizeOfdevstat = C.sizeof_struct_devstat
 )
 
 // Basic types
@@ -58,5 +60,7 @@ type (
 	_C_long_double C.longlong
 )
 
-type Devstat C.struct_devstat
-type Bintime C.struct_bintime
+type (
+	devstat C.struct_devstat
+	bintime C.struct_bintime
+)

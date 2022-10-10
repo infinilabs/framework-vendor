@@ -1,14 +1,14 @@
+//go:build freebsd
 // +build freebsd
 
 package net
 
 import (
 	"context"
-	"os/exec"
 	"strconv"
 	"strings"
 
-	"github.com/shirou/gopsutil/internal/common"
+	"github.com/shirou/gopsutil/v3/internal/common"
 )
 
 func IOCounters(pernic bool) ([]IOCountersStat, error) {
@@ -16,11 +16,7 @@ func IOCounters(pernic bool) ([]IOCountersStat, error) {
 }
 
 func IOCountersWithContext(ctx context.Context, pernic bool) ([]IOCountersStat, error) {
-	netstat, err := exec.LookPath("netstat")
-	if err != nil {
-		return nil, err
-	}
-	out, err := invoke.CommandWithContext(ctx, netstat, "-ibdnW")
+	out, err := invoke.CommandWithContext(ctx, "netstat", "-ibdnW")
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +90,7 @@ func IOCountersWithContext(ctx context.Context, pernic bool) ([]IOCountersStat, 
 	return ret, nil
 }
 
-// NetIOCountersByFile is an method which is added just a compatibility for linux.
+// IOCountersByFile exists just for compatibility with Linux.
 func IOCountersByFile(pernic bool, filename string) ([]IOCountersStat, error) {
 	return IOCountersByFileWithContext(context.Background(), pernic, filename)
 }

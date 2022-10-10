@@ -1,16 +1,17 @@
 package disk
 
 import (
+	"errors"
 	"fmt"
 	"runtime"
 	"sync"
 	"testing"
 
-	"github.com/shirou/gopsutil/internal/common"
+	"github.com/shirou/gopsutil/v3/internal/common"
 )
 
 func skipIfNotImplementedErr(t *testing.T, err error) {
-	if err == common.ErrNotImplementedError {
+	if errors.Is(err, common.ErrNotImplementedError) {
 		t.Skip("not implemented")
 	}
 }
@@ -38,12 +39,11 @@ func TestDisk_partitions(t *testing.T) {
 	}
 	t.Log(ret)
 
-	empty := PartitionStat{}
 	if len(ret) == 0 {
 		t.Errorf("ret is empty")
 	}
 	for _, disk := range ret {
-		if disk == empty {
+		if disk.Device == "" {
 			t.Errorf("Could not get device info %v", disk)
 		}
 	}
@@ -108,9 +108,9 @@ func TestDiskPartitionStat_String(t *testing.T) {
 		Device:     "sd01",
 		Mountpoint: "/",
 		Fstype:     "ext4",
-		Opts:       "ro",
+		Opts:       []string{"ro"},
 	}
-	e := `{"device":"sd01","mountpoint":"/","fstype":"ext4","opts":"ro"}`
+	e := `{"device":"sd01","mountpoint":"/","fstype":"ext4","opts":["ro"]}`
 	if e != fmt.Sprintf("%v", v) {
 		t.Errorf("DiskUsageStat string is invalid: %v", v)
 	}

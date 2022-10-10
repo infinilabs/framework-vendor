@@ -1,18 +1,19 @@
 package cpu
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"runtime"
 	"testing"
 	"time"
 
-	"github.com/shirou/gopsutil/internal/common"
+	"github.com/shirou/gopsutil/v3/internal/common"
 	"github.com/stretchr/testify/assert"
 )
 
 func skipIfNotImplementedErr(t *testing.T, err error) {
-	if err == common.ErrNotImplementedError {
+	if errors.Is(err, common.ErrNotImplementedError) {
 		t.Skip("not implemented")
 	}
 }
@@ -73,7 +74,6 @@ func TestCpu_times(t *testing.T) {
 	if cpuTotal[0].Idle != 0 {
 		assert.InEpsilon(t, cpuTotal[0].Idle, perCPUIdleTimeSum, margin)
 	}
-
 }
 
 func TestCpu_counts(t *testing.T) {
@@ -161,7 +161,6 @@ func testCPUPercent(t *testing.T, percpu bool) {
 }
 
 func testCPUPercentLastUsed(t *testing.T, percpu bool) {
-
 	numcpu := runtime.NumCPU()
 	testCount := 10
 
@@ -193,7 +192,6 @@ func testCPUPercentLastUsed(t *testing.T, percpu bool) {
 			}
 		}
 	}
-
 }
 
 func TestCPUPercent(t *testing.T) {

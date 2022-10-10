@@ -1,91 +1,45 @@
 on: [push, pull_request]
 name: Test
+permissions:
+  contents: read
+
 jobs:
+  go-versions:
+    runs-on: ubuntu-latest
+    outputs:
+      versions: ${{ steps.versions.outputs.value }}
+    steps:
+      - id: versions
+        run: |
+          versions=$(curl -s 'https://go.dev/dl/?mode=json' | jq -c 'map(.version[2:])')
+          echo "::set-output name=value::${versions}"
   test_v3_module:
+    needs: go-versions
     strategy:
+      fail-fast: false
       matrix:
-        go-version: [1.13.x, 1.14.x, 1.15.x]
-        os: [ubuntu-18.04, ubuntu-16.04, windows-2019, windows-2016, macOS-10.14, macos-11.0]
+        go-version: ${{fromJson(needs.go-versions.outputs.versions)}}
+        os: [ubuntu-20.04, ubuntu-18.04, windows-2019, macos-11]
     runs-on: ${{ matrix.os }}
     steps:
     - name: Install Go
-      uses: actions/setup-go@v2
+      uses: actions/setup-go@v3
       with:
         go-version: ${{ matrix.go-version }}
     - name: Checkout code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
+    - id: go-env
+      run: |
+        echo "::set-output name=cache::$(go env GOCACHE)"
+        echo "::set-output name=mod-cache::$(go env GOMODCACHE)"
+    - name: Cache go modules
+      uses: actions/cache@v3
+      with:
+        path: |
+          ${{ steps.go-env.outputs.cache }}
+          ${{ steps.go-env.outputs.mod-cache }}
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: ${{ runner.os }}-go-
     - name: Test
       run: |
-        cd ./v3/
-        go test ./...
-
-  test_v3_gopath:
-    env:
-      GOPATH: ${{ github.workspace }}
-      GO111MODULE: off
-    strategy:
-      matrix:
-        go-version: [1.13.x, 1.14.x, 1.15.x]
-        os: [ubuntu-18.04, ubuntu-16.04, windows-2019, windows-2016, macOS-10.14, macos-11.0]
-    runs-on: ${{ matrix.os }}
-    steps:
-    - name: Install Go
-      uses: actions/setup-go@v2
-      with:
-        go-version: ${{ matrix.go-version }}
-    - name: Checkout code
-      uses: actions/checkout@v2
-      with:
-        path: ${{ github.workspace }}/src/github.com/shirou/gopsutil
-    - name: Get dependencies
-      run: |
-        go get -t github.com/shirou/gopsutil/v3/...
-    - name: Test
-      run: |
-        go test github.com/shirou/gopsutil/v3/...
-
-  test_v2_gopath:
-    env:
-      GOPATH: ${{ github.workspace }}
-      GO111MODULE: off
-    strategy:
-      matrix:
-        go-version: [1.13.x, 1.14.x, 1.15.x]
-        os: [ubuntu-18.04, ubuntu-16.04, windows-2019, windows-2016, macOS-10.14, macos-11.0]
-    runs-on: ${{ matrix.os }}
-    steps:
-    - name: Install Go
-      uses: actions/setup-go@v2
-      with:
-        go-version: ${{ matrix.go-version }}
-    - name: Checkout code
-      uses: actions/checkout@v2
-      with:
-        path: ${{ github.workspace }}/src/github.com/shirou/gopsutil
-    - name: Get dependencies
-      if: runner.os == 'Windows'
-      run: |
-        go get -d -u github.com/golang/dep
-        cd $Env:GOPATH/src/github.com/golang/dep
-        git checkout v0.5.4
-        go install -ldflags="-X main.version=v0.5.4" ./cmd/dep
-        echo "$Env:GOPATH/bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-        cd $Env:GOPATH/src/github.com/shirou/gopsutil
-        dep ensure
-        # exclude v3 from being run with ./...
-        try { rm -ErrorAction:Stop -Recurse -Force $Env:GOPATH/src/github.com/shirou/gopsutil/v3 } catch [System.Management.Automation.ItemNotFoundException] {}
-    - name: Get dependencies
-      if: runner.os != 'Windows'
-      run: |
-        if ! command -v dep &>/dev/null; then
-          mkdir -p $GOPATH/bin
-          curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
-          echo "PATH=$GOPATH/bin:$PATH" >> $GITHUB_PATH
-        fi
-        cd $GOPATH/src/github.com/shirou/gopsutil
-        dep ensure
-        # exclude v3 from being run with ./...
-        rm -rf $GOPATH/src/github.com/shirou/gopsutil/v3
-    - name: Test
-      run: |
-        go test github.com/shirou/gopsutil/...
+        go test -coverprofile='coverage.out' -covermode=atomic ./...
