@@ -339,6 +339,13 @@ func (t *Template) ExecuteFuncString(f TagFunc) string {
 	return s
 }
 
+func (t *Template) ExecuteFuncStringExtend(output *bytebufferpool.ByteBuffer,f TagFunc) {
+	err := t.ExecuteFuncStringWithErrExtend(output,f)
+	if err != nil {
+		panic(fmt.Sprintf("unexpected error: %s", err))
+	}
+}
+
 // ExecuteFuncStringWithErr calls f on each template tag (placeholder) occurrence
 // and substitutes it with the data written to TagFunc's w.
 //
@@ -346,17 +353,23 @@ func (t *Template) ExecuteFuncString(f TagFunc) string {
 //
 // This function is optimized for frozen templates.
 // Use ExecuteFuncString for constantly changing templates.
+var templateBytesPool = bytebufferpool.NewTaggedPool("template",0,100*1024*1024,10000)
+
 func (t *Template) ExecuteFuncStringWithErr(f TagFunc) (string, error) {
-	bb := bytebufferpool.Get("template")
+	bb:=templateBytesPool.Get()
+	defer templateBytesPool.Put(bb)
 	if _, err := t.ExecuteFunc(bb, f); err != nil {
-		bb.Reset()
-		bytebufferpool.Put("template",bb)
 		return "", err
 	}
 	s := string(bb.Bytes())
-	bb.Reset()
-	bytebufferpool.Put("template",bb)
 	return s, nil
+}
+
+func (t *Template) ExecuteFuncStringWithErrExtend(output *bytebufferpool.ByteBuffer,f TagFunc) (error) {
+	if _, err := t.ExecuteFunc(output, f); err != nil {
+		return err
+	}
+	return nil
 }
 
 // ExecuteString substitutes template tags (placeholders) with the corresponding
