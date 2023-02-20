@@ -46,11 +46,11 @@ func NewMinMaxConstraints(min LogLevel, max LogLevel) (*minMaxConstraints, error
 	if min > max {
 		return nil, fmt.Errorf("min level can't be greater than max. Got min: %d, max: %d", min, max)
 	}
-	if min < TraceLvl || min > CriticalLvl {
-		return nil, fmt.Errorf("min level can't be less than Trace or greater than Critical. Got min: %d", min)
+	if min < TraceLvl || min > Off {
+		return nil, fmt.Errorf("min level can't be less than Trace or greater than Off. Got min: %d", min)
 	}
-	if max < TraceLvl || max > CriticalLvl {
-		return nil, fmt.Errorf("max level can't be less than Trace or greater than Critical. Got max: %d", max)
+	if max < TraceLvl || max > Off {
+		return nil, fmt.Errorf("max level can't be less than Trace or greater than Off. Got max: %d", max)
 	}
 
 	return &minMaxConstraints{min, max}, nil
