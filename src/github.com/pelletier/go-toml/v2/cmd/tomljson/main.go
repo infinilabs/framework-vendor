@@ -1,67 +1,63 @@
+// Package tomljson is a program that converts TOML to JSON.
+//
+// # Usage
+//
+// Reading from stdin:
+//
+//	cat file.toml | tomljson > file.json
+//
+// Reading from a file:
+//
+//	tomljson file.toml > file.json
+//
+// # Installation
+//
+// Using Go:
+//
+//	go install github.com/pelletier/go-toml/v2/cmd/tomljson@latest
 package main
 
 import (
 	"encoding/json"
-	"flag"
+	"errors"
 	"fmt"
 	"io"
-	"os"
 
-	"github.com/pelletier/go-toml"
+	"github.com/pelletier/go-toml/v2"
+	"github.com/pelletier/go-toml/v2/internal/cli"
 )
 
-func main() {
-	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, `tomljson can be used in two ways:
-Writing to STDIN and reading from STDOUT:
+const usage = `tomljson can be used in two ways:
+Reading from stdin:
   cat file.toml | tomljson > file.json
 
-Reading from a file name:
-  tomljson file.toml
-`)
+Reading from a file:
+  tomljson file.toml > file.json
+`
+
+func main() {
+	p := cli.Program{
+		Usage: usage,
+		Fn:    convert,
 	}
-	flag.Parse()
-	os.Exit(processMain(flag.Args(), os.Stdin, os.Stdout, os.Stderr))
+	p.Execute()
 }
 
-func processMain(files []string, defaultInput io.Reader, output io.Writer, errorOutput io.Writer) int {
-	// read from stdin and print to stdout
-	inputReader := defaultInput
+func convert(r io.Reader, w io.Writer) error {
+	var v interface{}
 
-	if len(files) > 0 {
-		var err error
-		inputReader, err = os.Open(files[0])
-		if err != nil {
-			printError(err, errorOutput)
-			return -1
+	d := toml.NewDecoder(r)
+	err := d.Decode(&v)
+	if err != nil {
+		var derr *toml.DecodeError
+		if errors.As(err, &derr) {
+			row, col := derr.Position()
+			return fmt.Errorf("%s\nerror occurred at row %d column %d", derr.String(), row, col)
 		}
+		return err
 	}
-	s, err := reader(inputReader)
-	if err != nil {
-		printError(err, errorOutput)
-		return -1
-	}
-	io.WriteString(output, s+"\n")
-	return 0
-}
 
-func printError(err error, output io.Writer) {
-	io.WriteString(output, err.Error()+"\n")
-}
-
-func reader(r io.Reader) (string, error) {
-	tree, err := toml.LoadReader(r)
-	if err != nil {
-		return "", err
-	}
-	return mapToJSON(tree)
-}
-
-func mapToJSON(tree *toml.TomlTree) (string, error) {
-	treeMap := tree.ToMap()
-	bytes, err := json.MarshalIndent(treeMap, "", "  ")
-	if err != nil {
-		return "", err
-	}
-	return string(bytes[:]), nil
+	e := json.NewEncoder(w)
+	e.SetIndent("", "  ")
+	return e.Encode(v)
 }

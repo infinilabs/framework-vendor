@@ -1,0 +1,43 @@
+name: tests
+
+on:
+  push:         {branches: [master]}
+  pull_request: {branches: [master]}
+
+jobs:
+  test:
+    runs-on: ubuntu-20.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        gover:
+          - "1.13"
+          - "1.14"
+          - "1.15"
+          - "1.16"
+          - "1.17"
+        goarch:
+          - "amd64"
+          - "386"
+
+    container: "golang:${{matrix.gover}}"
+    env:
+      GOARCH: "${{matrix.goarch}}"
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: test
+        run: |
+          go test -list Test
+          GOMAXPROCS=1 go test
+          if [ "$GOARCH" = "amd64" ]; then
+            echo "With -race:"
+            GOMAXPROCS=4 go test -race
+          fi
+
+      - name: lint
+        run: |
+          go vet
+          gofmt -w *.go && git diff --exit-code

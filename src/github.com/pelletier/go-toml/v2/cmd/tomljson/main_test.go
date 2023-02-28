@@ -2,81 +2,60 @@ package main
 
 import (
 	"bytes"
-	"io/ioutil"
-	"os"
+	"fmt"
+	"io"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func expectBufferEquality(t *testing.T, name string, buffer *bytes.Buffer, expected string) {
-	output := buffer.String()
-	if output != expected {
-		t.Errorf("incorrect %s:\n%s\n\nexpected %s:\n%s", name, output, name, expected)
-		t.Log([]rune(output))
-		t.Log([]rune(expected))
-	}
-}
-
-func expectProcessMainResults(t *testing.T, input string, args []string, exitCode int, expectedOutput string, expectedError string) {
-	inputReader := strings.NewReader(input)
-	outputBuffer := new(bytes.Buffer)
-	errorBuffer := new(bytes.Buffer)
-
-	returnCode := processMain(args, inputReader, outputBuffer, errorBuffer)
-
-	expectBufferEquality(t, "output", outputBuffer, expectedOutput)
-	expectBufferEquality(t, "error", errorBuffer, expectedError)
-
-	if returnCode != exitCode {
-		t.Error("incorrect return code:", returnCode, "expected", exitCode)
-	}
-}
-
-func TestProcessMainReadFromStdin(t *testing.T) {
-	input := `
-		[mytoml]
-		a = 42`
-	expectedOutput := `{
+func TestConvert(t *testing.T) {
+	examples := []struct {
+		name     string
+		input    io.Reader
+		expected string
+		errors   bool
+	}{
+		{
+			name: "valid toml",
+			input: strings.NewReader(`
+[mytoml]
+a = 42`),
+			expected: `{
   "mytoml": {
     "a": 42
   }
 }
-`
-	expectedError := ``
-	expectedExitCode := 0
-
-	expectProcessMainResults(t, input, []string{}, expectedExitCode, expectedOutput, expectedError)
-}
-
-func TestProcessMainReadFromFile(t *testing.T) {
-	input := `
-		[mytoml]
-		a = 42`
-
-	tmpfile, err := ioutil.TempFile("", "example.toml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tmpfile.Write([]byte(input)); err != nil {
-		t.Fatal(err)
+`,
+		},
+		{
+			name:   "invalid toml",
+			input:  strings.NewReader(`bad = []]`),
+			errors: true,
+		},
+		{
+			name:   "bad reader",
+			input:  &badReader{},
+			errors: true,
+		},
 	}
 
-	defer os.Remove(tmpfile.Name())
-
-	expectedOutput := `{
-  "mytoml": {
-    "a": 42
-  }
-}
-`
-	expectedError := ``
-	expectedExitCode := 0
-
-	expectProcessMainResults(t, ``, []string{tmpfile.Name()}, expectedExitCode, expectedOutput, expectedError)
+	for _, e := range examples {
+		b := new(bytes.Buffer)
+		err := convert(e.input, b)
+		if e.errors {
+			require.Error(t, err)
+		} else {
+			assert.NoError(t, err)
+			assert.Equal(t, e.expected, b.String())
+		}
+	}
 }
 
-func TestProcessMainReadFromMissingFile(t *testing.T) {
-	expectedError := `open /this/file/does/not/exist: no such file or directory
-`
-	expectProcessMainResults(t, ``, []string{"/this/file/does/not/exist"}, -1, ``, expectedError)
+type badReader struct{}
+
+func (r *badReader) Read([]byte) (int, error) {
+	return 0, fmt.Errorf("reader failed on purpose")
 }

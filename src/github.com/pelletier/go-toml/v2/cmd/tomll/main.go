@@ -1,61 +1,58 @@
+// Package tomll is a linter program for TOML.
+//
+// # Usage
+//
+// Reading from stdin, writing to stdout:
+//
+//	cat file.toml | tomll
+//
+// Reading and updating a list of files in place:
+//
+//	tomll a.toml b.toml c.toml
+//
+// # Installation
+//
+// Using Go:
+//
+//	go install github.com/pelletier/go-toml/v2/cmd/tomll@latest
 package main
 
 import (
-	"flag"
-	"fmt"
 	"io"
-	"io/ioutil"
-	"os"
 
-	"github.com/pelletier/go-toml"
+	"github.com/pelletier/go-toml/v2"
+	"github.com/pelletier/go-toml/v2/internal/cli"
 )
 
-func main() {
-	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, `tomll can be used in two ways:
-Writing to STDIN and reading from STDOUT:
+const usage = `tomll can be used in two ways:
+
+Reading from stdin, writing to stdout:
   cat file.toml | tomll > file.toml
 
-Reading and updating a list of files:
+Reading and updating a list of files in place:
   tomll a.toml b.toml c.toml
 
 When given a list of files, tomll will modify all files in place without asking.
-`)
+`
+
+func main() {
+	p := cli.Program{
+		Usage:   usage,
+		Fn:      convert,
+		Inplace: true,
 	}
-	flag.Parse()
-	// read from stdin and print to stdout
-	if flag.NArg() == 0 {
-		s, err := lintReader(os.Stdin)
-		if err != nil {
-			io.WriteString(os.Stderr, err.Error())
-			os.Exit(-1)
-		}
-		io.WriteString(os.Stdout, s)
-	} else {
-		// otherwise modify a list of files
-		for _, filename := range flag.Args() {
-			s, err := lintFile(filename)
-			if err != nil {
-				io.WriteString(os.Stderr, err.Error())
-				os.Exit(-1)
-			}
-			ioutil.WriteFile(filename, []byte(s), 0644)
-		}
-	}
+	p.Execute()
 }
 
-func lintFile(filename string) (string, error) {
-	tree, err := toml.LoadFile(filename)
-	if err != nil {
-		return "", err
-	}
-	return tree.String(), nil
-}
+func convert(r io.Reader, w io.Writer) error {
+	var v interface{}
 
-func lintReader(r io.Reader) (string, error) {
-	tree, err := toml.LoadReader(r)
+	d := toml.NewDecoder(r)
+	err := d.Decode(&v)
 	if err != nil {
-		return "", err
+		return err
 	}
-	return tree.String(), nil
+
+	e := toml.NewEncoder(w)
+	return e.Encode(v)
 }
