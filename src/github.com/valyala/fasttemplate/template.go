@@ -65,9 +65,9 @@ func ExecuteFunc(template, startTag, endTag string, w io.Writer, f TagFunc) (int
 // values from the map m and writes the result to the given writer w.
 //
 // Substitution map m may contain values with the following types:
-//   * []byte - the fastest value type
-//   * string - convenient value type
-//   * TagFunc - flexible value type
+//   - []byte - the fastest value type
+//   - string - convenient value type
+//   - TagFunc - flexible value type
 //
 // Returns the number of bytes written to w.
 //
@@ -81,9 +81,9 @@ func Execute(template, startTag, endTag string, w io.Writer, m map[string]interf
 // This can be used as a drop-in replacement for strings.Replacer
 //
 // Substitution map m may contain values with the following types:
-//   * []byte - the fastest value type
-//   * string - convenient value type
-//   * TagFunc - flexible value type
+//   - []byte - the fastest value type
+//   - string - convenient value type
+//   - TagFunc - flexible value type
 //
 // Returns the number of bytes written to w.
 //
@@ -120,12 +120,12 @@ func ExecuteFuncStringWithErr(template, startTag, endTag string, f TagFunc) (str
 	bb := bytebufferpool.Get("template")
 	if _, err := ExecuteFunc(template, startTag, endTag, bb, f); err != nil {
 		bb.Reset()
-		bytebufferpool.Put("template",bb)
+		bytebufferpool.Put("template", bb)
 		return "", err
 	}
 	s := string(bb.B)
 	bb.Reset()
-	bytebufferpool.Put("template",bb)
+	bytebufferpool.Put("template", bb)
 	return s, nil
 }
 
@@ -133,9 +133,9 @@ func ExecuteFuncStringWithErr(template, startTag, endTag string, f TagFunc) (str
 // values from the map m and returns the result.
 //
 // Substitution map m may contain values with the following types:
-//   * []byte - the fastest value type
-//   * string - convenient value type
-//   * TagFunc - flexible value type
+//   - []byte - the fastest value type
+//   - string - convenient value type
+//   - TagFunc - flexible value type
 //
 // This function is optimized for constantly changing templates.
 // Use Template.ExecuteString for frozen templates.
@@ -147,9 +147,9 @@ func ExecuteString(template, startTag, endTag string, m map[string]interface{}) 
 // This can be used as a drop-in replacement for strings.Replacer
 //
 // Substitution map m may contain values with the following types:
-//   * []byte - the fastest value type
-//   * string - convenient value type
-//   * TagFunc - flexible value type
+//   - []byte - the fastest value type
+//   - string - convenient value type
+//   - TagFunc - flexible value type
 //
 // This function is optimized for constantly changing templates.
 // Use Template.ExecuteStringStd for frozen templates.
@@ -164,8 +164,8 @@ type Template struct {
 	startTag string
 	endTag   string
 
-	texts          [][]byte
-	tags           []string
+	texts [][]byte
+	tags  []string
 }
 
 // New parses the given template using the given startTag and endTag
@@ -302,9 +302,9 @@ func (t *Template) ExecuteFunc(w io.Writer, f TagFunc) (int64, error) {
 // values from the map m and writes the result to the given writer w.
 //
 // Substitution map m may contain values with the following types:
-//   * []byte - the fastest value type
-//   * string - convenient value type
-//   * TagFunc - flexible value type
+//   - []byte - the fastest value type
+//   - string - convenient value type
+//   - TagFunc - flexible value type
 //
 // Returns the number of bytes written to w.
 func (t *Template) Execute(w io.Writer, m map[string]interface{}) (int64, error) {
@@ -315,9 +315,9 @@ func (t *Template) Execute(w io.Writer, m map[string]interface{}) (int64, error)
 // This can be used as a drop-in replacement for strings.Replacer
 //
 // Substitution map m may contain values with the following types:
-//   * []byte - the fastest value type
-//   * string - convenient value type
-//   * TagFunc - flexible value type
+//   - []byte - the fastest value type
+//   - string - convenient value type
+//   - TagFunc - flexible value type
 //
 // Returns the number of bytes written to w.
 func (t *Template) ExecuteStd(w io.Writer, m map[string]interface{}) (int64, error) {
@@ -339,8 +339,8 @@ func (t *Template) ExecuteFuncString(f TagFunc) string {
 	return s
 }
 
-func (t *Template) ExecuteFuncStringExtend(output *bytebufferpool.ByteBuffer,f TagFunc) {
-	err := t.ExecuteFuncStringWithErrExtend(output,f)
+func (t *Template) ExecuteFuncStringExtend(output io.Writer, f TagFunc) {
+	err := t.ExecuteFuncStringWithErrExtend(output, f)
 	if err != nil {
 		panic(fmt.Sprintf("unexpected error: %s", err))
 	}
@@ -353,10 +353,10 @@ func (t *Template) ExecuteFuncStringExtend(output *bytebufferpool.ByteBuffer,f T
 //
 // This function is optimized for frozen templates.
 // Use ExecuteFuncString for constantly changing templates.
-var templateBytesPool = bytebufferpool.NewTaggedPool("template",0,100*1024*1024,10000)
+var templateBytesPool = bytebufferpool.NewTaggedPool("template", 0, 100*1024*1024, 10000)
 
 func (t *Template) ExecuteFuncStringWithErr(f TagFunc) (string, error) {
-	bb:=templateBytesPool.Get()
+	bb := templateBytesPool.Get()
 	defer templateBytesPool.Put(bb)
 	if _, err := t.ExecuteFunc(bb, f); err != nil {
 		return "", err
@@ -365,7 +365,7 @@ func (t *Template) ExecuteFuncStringWithErr(f TagFunc) (string, error) {
 	return s, nil
 }
 
-func (t *Template) ExecuteFuncStringWithErrExtend(output *bytebufferpool.ByteBuffer,f TagFunc) (error) {
+func (t *Template) ExecuteFuncStringWithErrExtend(output io.Writer, f TagFunc) error {
 	if _, err := t.ExecuteFunc(output, f); err != nil {
 		return err
 	}
@@ -376,9 +376,9 @@ func (t *Template) ExecuteFuncStringWithErrExtend(output *bytebufferpool.ByteBuf
 // values from the map m and returns the result.
 //
 // Substitution map m may contain values with the following types:
-//   * []byte - the fastest value type
-//   * string - convenient value type
-//   * TagFunc - flexible value type
+//   - []byte - the fastest value type
+//   - string - convenient value type
+//   - TagFunc - flexible value type
 //
 // This function is optimized for frozen templates.
 // Use ExecuteString for constantly changing templates.
@@ -390,9 +390,9 @@ func (t *Template) ExecuteString(m map[string]interface{}) string {
 // This can be used as a drop-in replacement for strings.Replacer
 //
 // Substitution map m may contain values with the following types:
-//   * []byte - the fastest value type
-//   * string - convenient value type
-//   * TagFunc - flexible value type
+//   - []byte - the fastest value type
+//   - string - convenient value type
+//   - TagFunc - flexible value type
 //
 // This function is optimized for frozen templates.
 // Use ExecuteStringStd for constantly changing templates.
