@@ -9,14 +9,48 @@ package unix_test
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 	"testing"
 
 	"golang.org/x/sys/unix"
 )
+
+// getOneRetry wraps EventPort.GetOne which in turn wraps a syscall that can be
+// interrupted causing us to receive EINTR.
+// To prevent our tests from flaking, we retry the syscall until it works
+// rather than get unexpected results in our tests.
+func getOneRetry(t *testing.T, p *unix.EventPort, timeout *unix.Timespec) (e *unix.PortEvent, err error) {
+	t.Helper()
+	for {
+		e, err = p.GetOne(timeout)
+		if err != unix.EINTR {
+			break
+		}
+	}
+	return e, err
+}
+
+// getRetry wraps EventPort.Get which in turn wraps a syscall that can be
+// interrupted causing us to receive EINTR.
+// To prevent our tests from flaking, we retry the syscall until it works
+// rather than get unexpected results in our tests.
+func getRetry(t *testing.T, p *unix.EventPort, s []unix.PortEvent, min int, timeout *unix.Timespec) (n int, err error) {
+	t.Helper()
+	for {
+		n, err = p.Get(s, min, timeout)
+		if err != unix.EINTR {
+			break
+		}
+		// If we did get EINTR, make sure we got 0 events
+		if n != 0 {
+			t.Fatalf("EventPort.Get returned events on EINTR.\ngot: %d\nexpected: 0", n)
+		}
+	}
+	return n, err
+}
 
 func TestStatvfs(t *testing.T) {
 	if err := unix.Statvfs("", nil); err == nil {
@@ -49,7 +83,7 @@ func TestSysconf(t *testing.T) {
 // Event Ports
 
 func TestBasicEventPort(t *testing.T) {
-	tmpfile, err := ioutil.TempFile("", "eventport")
+	tmpfile, err := os.CreateTemp("", "eventport")
 	if err != nil {
 		t.Fatalf("unable to create a tempfile: %v", err)
 	}
@@ -84,13 +118,13 @@ func TestBasicEventPort(t *testing.T) {
 	bs := []byte{42}
 	tmpfile.Write(bs)
 	timeout := new(unix.Timespec)
-	timeout.Sec = 1
-	pevent, err := port.GetOne(timeout)
+	timeout.Nsec = 100
+	pevent, err := getOneRetry(t, port, timeout)
 	if err == unix.ETIME {
 		t.Errorf("GetOne timed out: %v", err)
 	}
 	if err != nil {
-		t.Errorf("GetOne failed: %v", err)
+		t.Fatalf("GetOne failed: %v", err)
 	}
 	if pevent.Path != path {
 		t.Errorf("Path mismatch: %v != %v", pevent.Path, path)
@@ -135,13 +169,13 @@ func TestEventPortFds(t *testing.T) {
 		t.Errorf("Pending() failed: %v, %v", n, err)
 	}
 	timeout := new(unix.Timespec)
-	timeout.Sec = 1
-	pevent, err := port.GetOne(timeout)
+	timeout.Nsec = 100
+	pevent, err := getOneRetry(t, port, timeout)
 	if err == unix.ETIME {
 		t.Errorf("GetOne timed out: %v", err)
 	}
 	if err != nil {
-		t.Errorf("GetOne failed: %v", err)
+		t.Fatalf("GetOne failed: %v", err)
 	}
 	if pevent.Fd != fd {
 		t.Errorf("Fd mismatch: %v != %v", pevent.Fd, fd)
@@ -162,7 +196,7 @@ func TestEventPortFds(t *testing.T) {
 }
 
 func TestEventPortErrors(t *testing.T) {
-	tmpfile, err := ioutil.TempFile("", "eventport")
+	tmpfile, err := os.CreateTemp("", "eventport")
 	if err != nil {
 		t.Errorf("unable to create a tempfile: %v", err)
 	}
@@ -181,24 +215,24 @@ func TestEventPortErrors(t *testing.T) {
 	}
 	timeout := new(unix.Timespec)
 	timeout.Nsec = 1
-	_, err = port.GetOne(timeout)
+	_, err = getOneRetry(t, port, timeout)
 	if err != unix.ETIME {
-		t.Errorf("unexpected lack of timeout")
+		t.Errorf("port.GetOne(%v) returned error %v, want %v", timeout, err, unix.ETIME)
 	}
 	err = port.DissociateFd(uintptr(0))
 	if err == nil {
 		t.Errorf("unexpected success dissociating unassociated fd")
 	}
-	events := make([]unix.PortEvent, 4, 4)
-	_, err = port.Get(events, 5, nil)
+	events := make([]unix.PortEvent, 4)
+	_, err = getRetry(t, port, events, 5, nil)
 	if err == nil {
 		t.Errorf("unexpected success calling Get with min greater than len of slice")
 	}
-	_, err = port.Get(nil, 1, nil)
+	_, err = getRetry(t, port, nil, 1, nil)
 	if err == nil {
 		t.Errorf("unexpected success calling Get with nil slice")
 	}
-	_, err = port.Get(nil, 0, nil)
+	_, err = getRetry(t, port, nil, 0, nil)
 	if err == nil {
 		t.Errorf("unexpected success calling Get with nil slice")
 	}
@@ -230,7 +264,13 @@ func ExamplePortEvent() {
 	w.Write(bs)
 	timeout := new(unix.Timespec)
 	timeout.Sec = 1
-	pevent, err := port.GetOne(timeout)
+	var pevent *unix.PortEvent
+	for {
+		pevent, err = port.GetOne(timeout)
+		if err != unix.EINTR {
+			break
+		}
+	}
 	if err != nil {
 		fmt.Printf("didn't get the expected event: %v\n", err)
 	}
@@ -248,7 +288,7 @@ func TestPortEventSlices(t *testing.T) {
 	}
 	// Create, associate, and delete 6 files
 	for i := 0; i < 6; i++ {
-		tmpfile, err := ioutil.TempFile("", "eventport")
+		tmpfile, err := os.CreateTemp("", "eventport")
 		if err != nil {
 			t.Fatalf("unable to create tempfile: %v", err)
 		}
@@ -275,8 +315,8 @@ func TestPortEventSlices(t *testing.T) {
 	}
 	timeout := new(unix.Timespec)
 	timeout.Nsec = 1
-	events := make([]unix.PortEvent, 4, 4)
-	n, err = port.Get(events, 3, timeout)
+	events := make([]unix.PortEvent, 4)
+	n, err = getRetry(t, port, events, 3, timeout)
 	if err != nil {
 		t.Errorf("Get failed: %v", err)
 	}
@@ -289,7 +329,7 @@ func TestPortEventSlices(t *testing.T) {
 			t.Errorf("unexpected event. got %v, expected %v", p.Events, unix.FILE_DELETE)
 		}
 	}
-	n, err = port.Get(events, 3, timeout)
+	n, err = getRetry(t, port, events, 3, timeout)
 	if err != unix.ETIME {
 		t.Errorf("unexpected error. got %v, expected %v", err, unix.ETIME)
 	}
@@ -312,7 +352,7 @@ func TestPortEventSlices(t *testing.T) {
 	bs := []byte{41}
 	w.Write(bs)
 
-	n, err = port.Get(events, 1, timeout)
+	n, err = getRetry(t, port, events, 1, timeout)
 	if err != nil {
 		t.Errorf("Get failed: %v", err)
 	}
@@ -330,5 +370,53 @@ func TestPortEventSlices(t *testing.T) {
 	err = port.Close()
 	if err != nil {
 		t.Errorf("port.Close() failed: %v", err)
+	}
+}
+
+func TestLifreqSetName(t *testing.T) {
+	var l unix.Lifreq
+	err := l.SetName("12345678901234356789012345678901234567890")
+	if err == nil {
+		t.Fatal(`Lifreq.SetName should reject names that are too long`)
+	}
+	err = l.SetName("tun0")
+	if err != nil {
+		t.Errorf(`Lifreq.SetName("tun0") failed: %v`, err)
+	}
+}
+
+func TestLifreqGetMTU(t *testing.T) {
+	// Find links and their MTU using CLI tooling
+	// $ dladm show-link -p -o link,mtu
+	// net0:1500
+	out, err := exec.Command("dladm", "show-link", "-p", "-o", "link,mtu").Output()
+	if err != nil {
+		t.Fatalf("unable to use dladm to find data links: %v", err)
+	}
+	lines := strings.Split(string(out), "\n")
+	tc := make(map[string]string)
+	for _, line := range lines {
+		v := strings.Split(line, ":")
+		if len(v) == 2 {
+			tc[v[0]] = v[1]
+		}
+	}
+	ip_fd, err := unix.Socket(unix.AF_INET, unix.SOCK_DGRAM, 0)
+	if err != nil {
+		t.Fatalf("could not open udp socket: %v", err)
+	}
+	var l unix.Lifreq
+	for link, mtu := range tc {
+		err = l.SetName(link)
+		if err != nil {
+			t.Fatalf("Lifreq.SetName(%q) failed: %v", link, err)
+		}
+		if err = unix.IoctlLifreq(ip_fd, unix.SIOCGLIFMTU, &l); err != nil {
+			t.Fatalf("unable to SIOCGLIFMTU: %v", err)
+		}
+		m := l.GetLifruUint()
+		if fmt.Sprintf("%d", m) != mtu {
+			t.Errorf("unable to read MTU correctly: expected %s, got %d", mtu, m)
+		}
 	}
 }

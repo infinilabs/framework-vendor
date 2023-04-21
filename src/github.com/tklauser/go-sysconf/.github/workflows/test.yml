@@ -3,40 +3,40 @@ name: Tests
 on:
   push:
     branches:
-    - master
+    - main
   pull_request:
     branches:
-    - master
+    - main
 
 jobs:
   build-and-test:
     strategy:
       matrix:
-        go-version: [1.14, 1.15, 1.16]
-        os: [ubuntu-16.04, ubuntu-18.04, ubuntu-20.04, macos-10.15]
+        go-version: [1.17, 1.18, 1.19]
+        os: [ubuntu-20.04, ubuntu-22.04, macos-11, macos-12]
     runs-on: ${{ matrix.os }}
 
     steps:
     - name: Install Go
-      uses: actions/setup-go@v2
+      uses: actions/setup-go@268d8c0ca0432bb2cf416faae41297df9d262d7f
       with:
         go-version: ${{ matrix.go-version }}
 
     - name: Check out code
-      uses: actions/checkout@v2
+      uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
 
     - name: Check formatting
-      if: ${{ matrix.go-version == '1.16' && matrix.os == 'ubuntu-20.04' }}
+      if: ${{ matrix.go-version == '1.19' && matrix.os == 'ubuntu-22.04' }}
       run: diff -u <(echo -n) <(gofmt -d .)
 
     - name: Check Go modules
-      if: ${{ matrix.go-version == '1.16' && matrix.os == 'ubuntu-20.04' }}
+      if: ${{ matrix.go-version == '1.19' && matrix.os == 'ubuntu-22.04' }}
       run: |
         go mod tidy
         git diff --exit-code
 
     - name: Build (cross-compile)
-      if: matrix.os == 'ubuntu-20.04'
+      if: matrix.os == 'ubuntu-22.04'
       run: |
         GOOS=darwin go build ./...
         GOOS=dragonfly go build ./...

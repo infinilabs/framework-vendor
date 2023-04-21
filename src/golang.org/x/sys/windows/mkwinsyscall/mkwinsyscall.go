@@ -12,32 +12,34 @@ to standard output.
 The prototypes are marked by lines beginning with "//sys" and read
 like func declarations if //sys is replaced by func, but:
 
-* The parameter lists must give a name for each argument. This
-  includes return parameters.
+  - The parameter lists must give a name for each argument. This
+    includes return parameters.
 
-* The parameter lists must give a type for each argument:
-  the (x, y, z int) shorthand is not allowed.
+  - The parameter lists must give a type for each argument:
+    the (x, y, z int) shorthand is not allowed.
 
-* If the return parameter is an error number, it must be named err.
+  - If the return parameter is an error number, it must be named err.
 
-* If go func name needs to be different from its winapi dll name,
-  the winapi name could be specified at the end, after "=" sign, like
-  //sys LoadLibrary(libname string) (handle uint32, err error) = LoadLibraryA
+  - If go func name needs to be different from its winapi dll name,
+    the winapi name could be specified at the end, after "=" sign, like
+    //sys LoadLibrary(libname string) (handle uint32, err error) = LoadLibraryA
 
-* Each function that returns err needs to supply a condition, that
-  return value of winapi will be tested against to detect failure.
-  This would set err to windows "last-error", otherwise it will be nil.
-  The value can be provided at end of //sys declaration, like
-  //sys LoadLibrary(libname string) (handle uint32, err error) [failretval==-1] = LoadLibraryA
-  and is [failretval==0] by default.
+  - Each function that returns err needs to supply a condition, that
+    return value of winapi will be tested against to detect failure.
+    This would set err to windows "last-error", otherwise it will be nil.
+    The value can be provided at end of //sys declaration, like
+    //sys LoadLibrary(libname string) (handle uint32, err error) [failretval==-1] = LoadLibraryA
+    and is [failretval==0] by default.
 
-* If the function name ends in a "?", then the function not existing is non-
-  fatal, and an error will be returned instead of panicking.
+  - If the function name ends in a "?", then the function not existing is non-
+    fatal, and an error will be returned instead of panicking.
 
 Usage:
+
 	mkwinsyscall [flags] [path ...]
 
 The flags are:
+
 	-output
 		Specify output file name (outputs to console if blank).
 	-trace
@@ -478,15 +480,14 @@ func newFn(s string) (*Fn, error) {
 		return nil, errors.New("Could not extract dll name from \"" + f.src + "\"")
 	}
 	s = trim(s[1:])
-	a := strings.Split(s, ".")
-	switch len(a) {
-	case 1:
-		f.dllfuncname = a[0]
-	case 2:
-		f.dllname = a[0]
-		f.dllfuncname = a[1]
-	default:
-		return nil, errors.New("Could not extract dll name from \"" + f.src + "\"")
+	if i := strings.LastIndex(s, "."); i >= 0 {
+		f.dllname = s[:i]
+		f.dllfuncname = s[i+1:]
+	} else {
+		f.dllfuncname = s
+	}
+	if f.dllfuncname == "" {
+		return nil, fmt.Errorf("function name is not specified in %q", s)
 	}
 	if n := f.dllfuncname; strings.HasSuffix(n, "?") {
 		f.dllfuncname = n[:len(n)-1]
@@ -503,7 +504,23 @@ func (f *Fn) DLLName() string {
 	return f.dllname
 }
 
-// DLLName returns DLL function name for function f.
+// DLLVar returns a valid Go identifier that represents DLLName.
+func (f *Fn) DLLVar() string {
+	id := strings.Map(func(r rune) rune {
+		switch r {
+		case '.', '-':
+			return '_'
+		default:
+			return r
+		}
+	}, f.DLLName())
+	if !token.IsIdentifier(id) {
+		panic(fmt.Errorf("could not create Go identifier for DLLName %q", f.DLLName()))
+	}
+	return id
+}
+
+// DLLFuncName returns DLL function name for function f.
 func (f *Fn) DLLFuncName() string {
 	if f.dllfuncname == "" {
 		return f.Name
@@ -648,6 +665,13 @@ func (f *Fn) HelperName() string {
 	return "_" + f.Name
 }
 
+// DLL is a DLL's filename and a string that is valid in a Go identifier that should be used when
+// naming a variable that refers to the DLL.
+type DLL struct {
+	Name string
+	Var  string
+}
+
 // Source files and functions.
 type Source struct {
 	Funcs           []*Fn
@@ -697,17 +721,19 @@ func ParseFiles(fs []string) (*Source, error) {
 }
 
 // DLLs return dll names for a source set src.
-func (src *Source) DLLs() []string {
+func (src *Source) DLLs() []DLL {
 	uniq := make(map[string]bool)
-	r := make([]string, 0)
+	r := make([]DLL, 0)
 	for _, f := range src.Funcs {
-		name := f.DLLName()
-		if _, found := uniq[name]; !found {
-			uniq[name] = true
-			r = append(r, name)
+		id := f.DLLVar()
+		if _, found := uniq[id]; !found {
+			uniq[id] = true
+			r = append(r, DLL{f.DLLName(), id})
 		}
 	}
-	sort.Strings(r)
+	sort.Slice(r, func(i, j int) bool {
+		return r[i].Var < r[j].Var
+	})
 	return r
 }
 
@@ -845,6 +871,22 @@ func (src *Source) Generate(w io.Writer) error {
 	return nil
 }
 
+func writeTempSourceFile(data []byte) (string, error) {
+	f, err := os.CreateTemp("", "mkwinsyscall-generated-*.go")
+	if err != nil {
+		return "", err
+	}
+	_, err = f.Write(data)
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		os.Remove(f.Name()) // best effort
+		return "", err
+	}
+	return f.Name(), nil
+}
+
 func usage() {
 	fmt.Fprintf(os.Stderr, "usage: mkwinsyscall [flags] [path ...]\n")
 	flag.PrintDefaults()
@@ -871,7 +913,12 @@ func main() {
 
 	data, err := format.Source(buf.Bytes())
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("failed to format source: %v", err)
+		f, err := writeTempSourceFile(buf.Bytes())
+		if err != nil {
+			log.Fatalf("failed to write unformatted source to file: %v", err)
+		}
+		log.Fatalf("for diagnosis, wrote unformatted source to %v", f)
 	}
 	if *filename == "" {
 		_, err = os.Stdout.Write(data)
@@ -934,10 +981,10 @@ var (
 
 {{/* help functions */}}
 
-{{define "dlls"}}{{range .DLLs}}	mod{{.}} = {{newlazydll .}}
+{{define "dlls"}}{{range .DLLs}}	mod{{.Var}} = {{newlazydll .Name}}
 {{end}}{{end}}
 
-{{define "funcnames"}}{{range .DLLFuncNames}}	proc{{.DLLFuncName}} = mod{{.DLLName}}.NewProc("{{.DLLFuncName}}")
+{{define "funcnames"}}{{range .DLLFuncNames}}	proc{{.DLLFuncName}} = mod{{.DLLVar}}.NewProc("{{.DLLFuncName}}")
 {{end}}{{end}}
 
 {{define "helperbody"}}

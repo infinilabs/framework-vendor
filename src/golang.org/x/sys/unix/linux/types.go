@@ -11,6 +11,7 @@ Input to cgo -godefs.  See README.md
 
 // +godefs map struct_in_addr [4]byte /* in_addr */
 // +godefs map struct_in6_addr [16]byte /* in6_addr */
+// +godefs map struct___kernel_sockaddr_storage SockaddrStorage
 
 package unix
 
@@ -21,6 +22,7 @@ package unix
 #define _GNU_SOURCE
 
 #include <dirent.h>
+#include <fcntl.h>
 #include <poll.h>
 #include <sched.h>
 #include <signal.h>
@@ -30,7 +32,7 @@ package unix
 #include <utime.h>
 
 #include <netinet/in.h>
-#include <netinet/tcp.h>
+#include <linux/tcp.h>
 
 #include <sys/epoll.h>
 #include <sys/inotify.h>
@@ -50,6 +52,7 @@ package unix
 #include <sys/timerfd.h>
 #include <sys/times.h>
 #include <sys/timex.h>
+#include <sys/types.h>
 #include <sys/un.h>
 #include <sys/user.h>
 #include <sys/utsname.h>
@@ -79,9 +82,11 @@ struct termios2 {
 #endif
 #include <asm/ptrace.h>
 
+#include <linux/audit.h>
 #include <linux/blkpg.h>
 #include <linux/bpf.h>
 #include <linux/can.h>
+#include <linux/can/netlink.h>
 #include <linux/can/raw.h>
 #include <linux/capability.h>
 #include <linux/cgroupstats.h>
@@ -93,6 +98,7 @@ struct termios2 {
 #include <linux/ethtool.h>
 #include <linux/ethtool_netlink.h>
 #include <linux/fanotify.h>
+#include <linux/fib_rules.h>
 #include <linux/filter.h>
 #include <linux/fs.h>
 #include <linux/fsverity.h>
@@ -105,8 +111,10 @@ struct termios2 {
 #include <linux/if_bridge.h>
 #include <linux/if_packet.h>
 #include <linux/if_pppox.h>
+#include <linux/if_tun.h>
 #include <linux/if_xdp.h>
 #include <linux/ipc.h>
+#include <linux/kcm.h>
 #include <linux/keyctl.h>
 #include <linux/landlock.h>
 #include <linux/loop.h>
@@ -123,6 +131,7 @@ struct termios2 {
 #include <linux/netlink.h>
 #include <linux/nexthop.h>
 #include <linux/nfc.h>
+#include <linux/nl80211.h>
 #include <linux/openat2.h>
 #include <linux/perf_event.h>
 #include <linux/pps.h>
@@ -134,8 +143,10 @@ struct termios2 {
 #include <linux/stat.h>
 #include <linux/taskstats.h>
 #include <linux/tipc.h>
-#include <linux/watchdog.h>
+#include <linux/virtio_net.h>
 #include <linux/vm_sockets.h>
+#include <linux/watchdog.h>
+#include <linux/wireguard.h>
 
 #include <mtd/mtd-user.h>
 
@@ -150,7 +161,7 @@ struct termios2 {
 //	  struct (like st_atim) for consistency with the glibc fields.
 //	* The padding fields get different names to not break compatibility.
 //	* st_blocks is signed, again for compatibility.
-struct stat {
+typedef struct {
 	unsigned int		st_dev;
 	unsigned int		st_pad1[3]; // Reserved for st_dev expansion
 
@@ -177,37 +188,9 @@ struct stat {
 	unsigned int		st_pad4;
 
 	long			st_blocks;
-};
-
-// These are needed because we do not include fcntl.h or sys/types.h
-#include <linux/fcntl.h>
-#include <linux/fadvise.h>
-
+} my_stat;
 #else
-
-// Use the stat defined by glibc
-#include <fcntl.h>
-#include <sys/types.h>
-
-#endif
-
-// These are defined in linux/fcntl.h, but including it globally causes
-// conflicts with fcntl.h
-#ifndef AT_STATX_SYNC_TYPE
-# define AT_STATX_SYNC_TYPE	0x6000	// Type of synchronisation required from statx()
-#endif
-#ifndef AT_STATX_SYNC_AS_STAT
-# define AT_STATX_SYNC_AS_STAT	0x0000	// - Do whatever stat() does
-#endif
-#ifndef AT_STATX_FORCE_SYNC
-# define AT_STATX_FORCE_SYNC	0x2000	// - Force the attributes to be sync'd with the server
-#endif
-#ifndef AT_STATX_DONT_SYNC
-# define AT_STATX_DONT_SYNC	0x4000	// - Don't sync attributes with the server
-#endif
-
-#ifndef AT_EACCESS
-# define AT_EACCESS		0x200	// Test access permitted for effective IDs, not real IDs.
+typedef struct stat my_stat;
 #endif
 
 #ifdef TCSETS2
@@ -303,7 +286,7 @@ struct my_sockaddr_nfc_llcp {
 
 #ifdef __ARM_EABI__
 typedef struct user_regs PtraceRegs;
-#elif defined(__aarch64__)
+#elif defined(__aarch64__) || defined(__loongarch64)
 typedef struct user_pt_regs PtraceRegs;
 #elif defined(__mips__) || defined(__powerpc__) || defined(__powerpc64__)
 typedef struct pt_regs PtraceRegs;
@@ -334,7 +317,8 @@ struct my_epoll_event {
 	// alignment requirements of EABI
 	int32_t padFd;
 #elif defined(__powerpc__) || defined(__powerpc64__) || defined(__s390x__) || defined(__sparc__) \
-		|| defined(__riscv) || (defined(__mips__) && _MIPS_SIM == _MIPS_SIM_ABI64)
+		|| defined(__riscv) || (defined(__mips__) && _MIPS_SIM == _MIPS_SIM_ABI64) \
+		|| defined(__loongarch64)
 	int32_t _padFd;
 #endif
 	int32_t fd;
@@ -395,6 +379,10 @@ struct perf_event_attr_go {
 	__u32 aux_watermark;
 	__u16 sample_max_stack;
 	__u16 __reserved_2;
+	__u32 aux_sample_size;
+	__u32 __reserved_3;
+
+	__u64 sig_data;
 };
 
 // ustat is deprecated and glibc 2.28 removed ustat.h. Provide the type here for
@@ -424,6 +412,19 @@ struct tipc_service_name {
 	__u32 instance;
 	// From the union.
 	__u32 domain;
+};
+
+// copied from /usr/include/linux/can/netlink.h modified with explicit unsigned chars.
+struct my_can_bittiming_const {
+	uint8_t name[16];
+	__u32 tseg1_min;
+	__u32 tseg1_max;
+	__u32 tseg2_min;
+	__u32 tseg2_max;
+	__u32 sjw_max;
+	__u32 brp_min;
+	__u32 brp_max;
+	__u32 brp_inc;
 };
 */
 import "C"
@@ -458,6 +459,43 @@ type Timex C.struct_timex
 
 type ItimerSpec C.struct_itimerspec
 
+type Itimerval C.struct_itimerval
+
+const (
+	ADJ_OFFSET            = C.ADJ_OFFSET
+	ADJ_FREQUENCY         = C.ADJ_FREQUENCY
+	ADJ_MAXERROR          = C.ADJ_MAXERROR
+	ADJ_ESTERROR          = C.ADJ_ESTERROR
+	ADJ_STATUS            = C.ADJ_STATUS
+	ADJ_TIMECONST         = C.ADJ_TIMECONST
+	ADJ_TAI               = C.ADJ_TAI
+	ADJ_SETOFFSET         = C.ADJ_SETOFFSET
+	ADJ_MICRO             = C.ADJ_MICRO
+	ADJ_NANO              = C.ADJ_NANO
+	ADJ_TICK              = C.ADJ_TICK
+	ADJ_OFFSET_SINGLESHOT = C.ADJ_OFFSET_SINGLESHOT
+	ADJ_OFFSET_SS_READ    = C.ADJ_OFFSET_SS_READ
+)
+
+const (
+	STA_PLL       = C.STA_PLL
+	STA_PPSFREQ   = C.STA_PPSFREQ
+	STA_PPSTIME   = C.STA_PPSTIME
+	STA_FLL       = C.STA_FLL
+	STA_INS       = C.STA_INS
+	STA_DEL       = C.STA_DEL
+	STA_UNSYNC    = C.STA_UNSYNC
+	STA_FREQHOLD  = C.STA_FREQHOLD
+	STA_PPSSIGNAL = C.STA_PPSSIGNAL
+	STA_PPSJITTER = C.STA_PPSJITTER
+	STA_PPSWANDER = C.STA_PPSWANDER
+	STA_PPSERROR  = C.STA_PPSERROR
+	STA_CLOCKERR  = C.STA_CLOCKERR
+	STA_NANO      = C.STA_NANO
+	STA_MODE      = C.STA_MODE
+	STA_CLK       = C.STA_CLK
+)
+
 const (
 	TIME_OK    = C.TIME_OK
 	TIME_INS   = C.TIME_INS
@@ -484,7 +522,7 @@ type _Gid_t C.gid_t
 
 // Files
 
-type Stat_t C.struct_stat
+type Stat_t C.my_stat
 
 type StatxTimestamp C.struct_statx_timestamp
 
@@ -883,6 +921,26 @@ const (
 	AT_SYMLINK_NOFOLLOW = C.AT_SYMLINK_NOFOLLOW
 
 	AT_EACCESS = C.AT_EACCESS
+
+	OPEN_TREE_CLONE   = C.OPEN_TREE_CLONE
+	OPEN_TREE_CLOEXEC = C.OPEN_TREE_CLOEXEC
+
+	MOVE_MOUNT_F_SYMLINKS   = C.MOVE_MOUNT_F_SYMLINKS
+	MOVE_MOUNT_F_AUTOMOUNTS = C.MOVE_MOUNT_F_AUTOMOUNTS
+	MOVE_MOUNT_F_EMPTY_PATH = C.MOVE_MOUNT_F_EMPTY_PATH
+	MOVE_MOUNT_T_SYMLINKS   = C.MOVE_MOUNT_T_SYMLINKS
+	MOVE_MOUNT_T_AUTOMOUNTS = C.MOVE_MOUNT_T_AUTOMOUNTS
+	MOVE_MOUNT_T_EMPTY_PATH = C.MOVE_MOUNT_T_EMPTY_PATH
+	MOVE_MOUNT_SET_GROUP    = C.MOVE_MOUNT_SET_GROUP
+
+	FSOPEN_CLOEXEC = C.FSOPEN_CLOEXEC
+
+	FSPICK_CLOEXEC          = C.FSPICK_CLOEXEC
+	FSPICK_SYMLINK_NOFOLLOW = C.FSPICK_SYMLINK_NOFOLLOW
+	FSPICK_NO_AUTOMOUNT     = C.FSPICK_NO_AUTOMOUNT
+	FSPICK_EMPTY_PATH       = C.FSPICK_EMPTY_PATH
+
+	FSMOUNT_CLOEXEC = C.FSMOUNT_CLOEXEC
 )
 
 type OpenHow C.struct_open_how
@@ -913,7 +971,15 @@ type Sigset_t C.sigset_t
 
 const _C__NSIG = C._NSIG
 
+const (
+	SIG_BLOCK   = C.SIG_BLOCK
+	SIG_UNBLOCK = C.SIG_UNBLOCK
+	SIG_SETMASK = C.SIG_SETMASK
+)
+
 type SignalfdSiginfo C.struct_signalfd_siginfo
+
+type Siginfo C.siginfo_t
 
 // Terminal handling
 
@@ -959,6 +1025,8 @@ const (
 
 type Genlmsghdr C.struct_genlmsghdr
 
+// Generated by:
+// $ perl -nlE '/^\s*(CTRL_\w+)/ && say "$1 = C.$1"' /usr/include/linux/genetlink.h
 const (
 	CTRL_CMD_UNSPEC            = C.CTRL_CMD_UNSPEC
 	CTRL_CMD_NEWFAMILY         = C.CTRL_CMD_NEWFAMILY
@@ -970,6 +1038,7 @@ const (
 	CTRL_CMD_NEWMCAST_GRP      = C.CTRL_CMD_NEWMCAST_GRP
 	CTRL_CMD_DELMCAST_GRP      = C.CTRL_CMD_DELMCAST_GRP
 	CTRL_CMD_GETMCAST_GRP      = C.CTRL_CMD_GETMCAST_GRP
+	CTRL_CMD_GETPOLICY         = C.CTRL_CMD_GETPOLICY
 	CTRL_ATTR_UNSPEC           = C.CTRL_ATTR_UNSPEC
 	CTRL_ATTR_FAMILY_ID        = C.CTRL_ATTR_FAMILY_ID
 	CTRL_ATTR_FAMILY_NAME      = C.CTRL_ATTR_FAMILY_NAME
@@ -978,12 +1047,19 @@ const (
 	CTRL_ATTR_MAXATTR          = C.CTRL_ATTR_MAXATTR
 	CTRL_ATTR_OPS              = C.CTRL_ATTR_OPS
 	CTRL_ATTR_MCAST_GROUPS     = C.CTRL_ATTR_MCAST_GROUPS
+	CTRL_ATTR_POLICY           = C.CTRL_ATTR_POLICY
+	CTRL_ATTR_OP_POLICY        = C.CTRL_ATTR_OP_POLICY
+	CTRL_ATTR_OP               = C.CTRL_ATTR_OP
 	CTRL_ATTR_OP_UNSPEC        = C.CTRL_ATTR_OP_UNSPEC
 	CTRL_ATTR_OP_ID            = C.CTRL_ATTR_OP_ID
 	CTRL_ATTR_OP_FLAGS         = C.CTRL_ATTR_OP_FLAGS
 	CTRL_ATTR_MCAST_GRP_UNSPEC = C.CTRL_ATTR_MCAST_GRP_UNSPEC
 	CTRL_ATTR_MCAST_GRP_NAME   = C.CTRL_ATTR_MCAST_GRP_NAME
 	CTRL_ATTR_MCAST_GRP_ID     = C.CTRL_ATTR_MCAST_GRP_ID
+	CTRL_ATTR_POLICY_UNSPEC    = C.CTRL_ATTR_POLICY_UNSPEC
+	CTRL_ATTR_POLICY_DO        = C.CTRL_ATTR_POLICY_DO
+	CTRL_ATTR_POLICY_DUMP      = C.CTRL_ATTR_POLICY_DUMP
+	CTRL_ATTR_POLICY_DUMP_MAX  = C.CTRL_ATTR_POLICY_DUMP_MAX
 )
 
 // CPU affinity
@@ -1039,6 +1115,7 @@ const (
 	PerfBitCommExec                      = CBitFieldMaskBit24
 	PerfBitUseClockID                    = CBitFieldMaskBit25
 	PerfBitContextSwitch                 = CBitFieldMaskBit26
+	PerfBitWriteBackward                 = CBitFieldMaskBit27
 )
 
 // generated by:
@@ -1133,6 +1210,7 @@ const (
 	PERF_SAMPLE_BRANCH_NO_CYCLES_SHIFT    = C.PERF_SAMPLE_BRANCH_NO_CYCLES_SHIFT
 	PERF_SAMPLE_BRANCH_TYPE_SAVE_SHIFT    = C.PERF_SAMPLE_BRANCH_TYPE_SAVE_SHIFT
 	PERF_SAMPLE_BRANCH_HW_INDEX_SHIFT     = C.PERF_SAMPLE_BRANCH_HW_INDEX_SHIFT
+	PERF_SAMPLE_BRANCH_PRIV_SAVE_SHIFT    = C.PERF_SAMPLE_BRANCH_PRIV_SAVE_SHIFT
 	PERF_SAMPLE_BRANCH_MAX_SHIFT          = C.PERF_SAMPLE_BRANCH_MAX_SHIFT
 	PERF_SAMPLE_BRANCH_USER               = C.PERF_SAMPLE_BRANCH_USER
 	PERF_SAMPLE_BRANCH_KERNEL             = C.PERF_SAMPLE_BRANCH_KERNEL
@@ -1152,6 +1230,7 @@ const (
 	PERF_SAMPLE_BRANCH_NO_CYCLES          = C.PERF_SAMPLE_BRANCH_NO_CYCLES
 	PERF_SAMPLE_BRANCH_TYPE_SAVE          = C.PERF_SAMPLE_BRANCH_TYPE_SAVE
 	PERF_SAMPLE_BRANCH_HW_INDEX           = C.PERF_SAMPLE_BRANCH_HW_INDEX
+	PERF_SAMPLE_BRANCH_PRIV_SAVE          = C.PERF_SAMPLE_BRANCH_PRIV_SAVE
 	PERF_SAMPLE_BRANCH_MAX                = C.PERF_SAMPLE_BRANCH_MAX
 	PERF_BR_UNKNOWN                       = C.PERF_BR_UNKNOWN
 	PERF_BR_COND                          = C.PERF_BR_COND
@@ -1164,6 +1243,11 @@ const (
 	PERF_BR_SYSRET                        = C.PERF_BR_SYSRET
 	PERF_BR_COND_CALL                     = C.PERF_BR_COND_CALL
 	PERF_BR_COND_RET                      = C.PERF_BR_COND_RET
+	PERF_BR_ERET                          = C.PERF_BR_ERET
+	PERF_BR_IRQ                           = C.PERF_BR_IRQ
+	PERF_BR_SERROR                        = C.PERF_BR_SERROR
+	PERF_BR_NO_TX                         = C.PERF_BR_NO_TX
+	PERF_BR_EXTEND_ABI                    = C.PERF_BR_EXTEND_ABI
 	PERF_BR_MAX                           = C.PERF_BR_MAX
 	PERF_SAMPLE_REGS_ABI_NONE             = C.PERF_SAMPLE_REGS_ABI_NONE
 	PERF_SAMPLE_REGS_ABI_32               = C.PERF_SAMPLE_REGS_ABI_32
@@ -1183,6 +1267,7 @@ const (
 	PERF_FORMAT_TOTAL_TIME_RUNNING        = C.PERF_FORMAT_TOTAL_TIME_RUNNING
 	PERF_FORMAT_ID                        = C.PERF_FORMAT_ID
 	PERF_FORMAT_GROUP                     = C.PERF_FORMAT_GROUP
+	PERF_FORMAT_LOST                      = C.PERF_FORMAT_LOST
 	PERF_FORMAT_MAX                       = C.PERF_FORMAT_MAX
 	PERF_IOC_FLAG_GROUP                   = C.PERF_IOC_FLAG_GROUP
 	PERF_RECORD_MMAP                      = C.PERF_RECORD_MMAP
@@ -1205,6 +1290,7 @@ const (
 	PERF_RECORD_BPF_EVENT                 = C.PERF_RECORD_BPF_EVENT
 	PERF_RECORD_CGROUP                    = C.PERF_RECORD_CGROUP
 	PERF_RECORD_TEXT_POKE                 = C.PERF_RECORD_TEXT_POKE
+	PERF_RECORD_AUX_OUTPUT_HW_ID          = C.PERF_RECORD_AUX_OUTPUT_HW_ID
 	PERF_RECORD_MAX                       = C.PERF_RECORD_MAX
 	PERF_RECORD_KSYMBOL_TYPE_UNKNOWN      = C.PERF_RECORD_KSYMBOL_TYPE_UNKNOWN
 	PERF_RECORD_KSYMBOL_TYPE_BPF          = C.PERF_RECORD_KSYMBOL_TYPE_BPF
@@ -1426,6 +1512,11 @@ const (
 	IFLA_ALT_IFNAME                            = C.IFLA_ALT_IFNAME
 	IFLA_PERM_ADDRESS                          = C.IFLA_PERM_ADDRESS
 	IFLA_PROTO_DOWN_REASON                     = C.IFLA_PROTO_DOWN_REASON
+	IFLA_PARENT_DEV_NAME                       = C.IFLA_PARENT_DEV_NAME
+	IFLA_PARENT_DEV_BUS_NAME                   = C.IFLA_PARENT_DEV_BUS_NAME
+	IFLA_GRO_MAX_SIZE                          = C.IFLA_GRO_MAX_SIZE
+	IFLA_TSO_MAX_SIZE                          = C.IFLA_TSO_MAX_SIZE
+	IFLA_TSO_MAX_SEGS                          = C.IFLA_TSO_MAX_SEGS
 	IFLA_PROTO_DOWN_REASON_UNSPEC              = C.IFLA_PROTO_DOWN_REASON_UNSPEC
 	IFLA_PROTO_DOWN_REASON_MASK                = C.IFLA_PROTO_DOWN_REASON_MASK
 	IFLA_PROTO_DOWN_REASON_VALUE               = C.IFLA_PROTO_DOWN_REASON_VALUE
@@ -1777,6 +1868,7 @@ const (
 
 const (
 	NF_NETDEV_INGRESS  = C.NF_NETDEV_INGRESS
+	NF_NETDEV_EGRESS   = C.NF_NETDEV_EGRESS
 	NF_NETDEV_NUMHOOKS = C.NF_NETDEV_NUMHOOKS
 )
 
@@ -1854,6 +1946,10 @@ const (
 	NFT_MSG_GETOBJ                    = C.NFT_MSG_GETOBJ
 	NFT_MSG_DELOBJ                    = C.NFT_MSG_DELOBJ
 	NFT_MSG_GETOBJ_RESET              = C.NFT_MSG_GETOBJ_RESET
+	NFT_MSG_NEWFLOWTABLE              = C.NFT_MSG_NEWFLOWTABLE
+	NFT_MSG_GETFLOWTABLE              = C.NFT_MSG_GETFLOWTABLE
+	NFT_MSG_DELFLOWTABLE              = C.NFT_MSG_DELFLOWTABLE
+	NFT_MSG_GETRULE_RESET             = C.NFT_MSG_GETRULE_RESET
 	NFT_MSG_MAX                       = C.NFT_MSG_MAX
 	NFTA_LIST_UNSPEC                  = C.NFTA_LIST_UNSPEC
 	NFTA_LIST_ELEM                    = C.NFTA_LIST_ELEM
@@ -2337,6 +2433,8 @@ const (
 	SOF_TIMESTAMPING_OPT_STATS    = C.SOF_TIMESTAMPING_OPT_STATS
 	SOF_TIMESTAMPING_OPT_PKTINFO  = C.SOF_TIMESTAMPING_OPT_PKTINFO
 	SOF_TIMESTAMPING_OPT_TX_SWHW  = C.SOF_TIMESTAMPING_OPT_TX_SWHW
+	SOF_TIMESTAMPING_BIND_PHC     = C.SOF_TIMESTAMPING_BIND_PHC
+	SOF_TIMESTAMPING_OPT_ID_TCP   = C.SOF_TIMESTAMPING_OPT_ID_TCP
 
 	SOF_TIMESTAMPING_LAST = C.SOF_TIMESTAMPING_LAST
 	SOF_TIMESTAMPING_MASK = C.SOF_TIMESTAMPING_MASK
@@ -2916,6 +3014,15 @@ const (
 	DEVLINK_CMD_TRAP_POLICER_NEW                       = C.DEVLINK_CMD_TRAP_POLICER_NEW
 	DEVLINK_CMD_TRAP_POLICER_DEL                       = C.DEVLINK_CMD_TRAP_POLICER_DEL
 	DEVLINK_CMD_HEALTH_REPORTER_TEST                   = C.DEVLINK_CMD_HEALTH_REPORTER_TEST
+	DEVLINK_CMD_RATE_GET                               = C.DEVLINK_CMD_RATE_GET
+	DEVLINK_CMD_RATE_SET                               = C.DEVLINK_CMD_RATE_SET
+	DEVLINK_CMD_RATE_NEW                               = C.DEVLINK_CMD_RATE_NEW
+	DEVLINK_CMD_RATE_DEL                               = C.DEVLINK_CMD_RATE_DEL
+	DEVLINK_CMD_LINECARD_GET                           = C.DEVLINK_CMD_LINECARD_GET
+	DEVLINK_CMD_LINECARD_SET                           = C.DEVLINK_CMD_LINECARD_SET
+	DEVLINK_CMD_LINECARD_NEW                           = C.DEVLINK_CMD_LINECARD_NEW
+	DEVLINK_CMD_LINECARD_DEL                           = C.DEVLINK_CMD_LINECARD_DEL
+	DEVLINK_CMD_SELFTESTS_GET                          = C.DEVLINK_CMD_SELFTESTS_GET
 	DEVLINK_CMD_MAX                                    = C.DEVLINK_CMD_MAX
 	DEVLINK_PORT_TYPE_NOTSET                           = C.DEVLINK_PORT_TYPE_NOTSET
 	DEVLINK_PORT_TYPE_AUTO                             = C.DEVLINK_PORT_TYPE_AUTO
@@ -3139,6 +3246,18 @@ const (
 	DEVLINK_ATTR_RELOAD_ACTION_INFO                    = C.DEVLINK_ATTR_RELOAD_ACTION_INFO
 	DEVLINK_ATTR_RELOAD_ACTION_STATS                   = C.DEVLINK_ATTR_RELOAD_ACTION_STATS
 	DEVLINK_ATTR_PORT_PCI_SF_NUMBER                    = C.DEVLINK_ATTR_PORT_PCI_SF_NUMBER
+	DEVLINK_ATTR_RATE_TYPE                             = C.DEVLINK_ATTR_RATE_TYPE
+	DEVLINK_ATTR_RATE_TX_SHARE                         = C.DEVLINK_ATTR_RATE_TX_SHARE
+	DEVLINK_ATTR_RATE_TX_MAX                           = C.DEVLINK_ATTR_RATE_TX_MAX
+	DEVLINK_ATTR_RATE_NODE_NAME                        = C.DEVLINK_ATTR_RATE_NODE_NAME
+	DEVLINK_ATTR_RATE_PARENT_NODE_NAME                 = C.DEVLINK_ATTR_RATE_PARENT_NODE_NAME
+	DEVLINK_ATTR_REGION_MAX_SNAPSHOTS                  = C.DEVLINK_ATTR_REGION_MAX_SNAPSHOTS
+	DEVLINK_ATTR_LINECARD_INDEX                        = C.DEVLINK_ATTR_LINECARD_INDEX
+	DEVLINK_ATTR_LINECARD_STATE                        = C.DEVLINK_ATTR_LINECARD_STATE
+	DEVLINK_ATTR_LINECARD_TYPE                         = C.DEVLINK_ATTR_LINECARD_TYPE
+	DEVLINK_ATTR_LINECARD_SUPPORTED_TYPES              = C.DEVLINK_ATTR_LINECARD_SUPPORTED_TYPES
+	DEVLINK_ATTR_NESTED_DEVLINK                        = C.DEVLINK_ATTR_NESTED_DEVLINK
+	DEVLINK_ATTR_SELFTESTS                             = C.DEVLINK_ATTR_SELFTESTS
 	DEVLINK_ATTR_MAX                                   = C.DEVLINK_ATTR_MAX
 	DEVLINK_DPIPE_FIELD_MAPPING_TYPE_NONE              = C.DEVLINK_DPIPE_FIELD_MAPPING_TYPE_NONE
 	DEVLINK_DPIPE_FIELD_MAPPING_TYPE_IFINDEX           = C.DEVLINK_DPIPE_FIELD_MAPPING_TYPE_IFINDEX
@@ -3155,6 +3274,7 @@ const (
 	DEVLINK_PORT_FUNCTION_ATTR_HW_ADDR                 = C.DEVLINK_PORT_FUNCTION_ATTR_HW_ADDR
 	DEVLINK_PORT_FN_ATTR_STATE                         = C.DEVLINK_PORT_FN_ATTR_STATE
 	DEVLINK_PORT_FN_ATTR_OPSTATE                       = C.DEVLINK_PORT_FN_ATTR_OPSTATE
+	DEVLINK_PORT_FN_ATTR_CAPS                          = C.DEVLINK_PORT_FN_ATTR_CAPS
 	DEVLINK_PORT_FUNCTION_ATTR_MAX                     = C.DEVLINK_PORT_FUNCTION_ATTR_MAX
 )
 
@@ -3229,6 +3349,7 @@ const (
 	LWTUNNEL_ENCAP_SEG6_LOCAL = C.LWTUNNEL_ENCAP_SEG6_LOCAL
 	LWTUNNEL_ENCAP_RPL        = C.LWTUNNEL_ENCAP_RPL
 	LWTUNNEL_ENCAP_IOAM6      = C.LWTUNNEL_ENCAP_IOAM6
+	LWTUNNEL_ENCAP_XFRM       = C.LWTUNNEL_ENCAP_XFRM
 	LWTUNNEL_ENCAP_MAX        = C.LWTUNNEL_ENCAP_MAX
 
 	MPLS_IPTUNNEL_UNSPEC = C.MPLS_IPTUNNEL_UNSPEC
@@ -3424,6 +3545,16 @@ const (
 	ETHTOOL_MSG_CABLE_TEST_ACT                = C.ETHTOOL_MSG_CABLE_TEST_ACT
 	ETHTOOL_MSG_CABLE_TEST_TDR_ACT            = C.ETHTOOL_MSG_CABLE_TEST_TDR_ACT
 	ETHTOOL_MSG_TUNNEL_INFO_GET               = C.ETHTOOL_MSG_TUNNEL_INFO_GET
+	ETHTOOL_MSG_FEC_GET                       = C.ETHTOOL_MSG_FEC_GET
+	ETHTOOL_MSG_FEC_SET                       = C.ETHTOOL_MSG_FEC_SET
+	ETHTOOL_MSG_MODULE_EEPROM_GET             = C.ETHTOOL_MSG_MODULE_EEPROM_GET
+	ETHTOOL_MSG_STATS_GET                     = C.ETHTOOL_MSG_STATS_GET
+	ETHTOOL_MSG_PHC_VCLOCKS_GET               = C.ETHTOOL_MSG_PHC_VCLOCKS_GET
+	ETHTOOL_MSG_MODULE_GET                    = C.ETHTOOL_MSG_MODULE_GET
+	ETHTOOL_MSG_MODULE_SET                    = C.ETHTOOL_MSG_MODULE_SET
+	ETHTOOL_MSG_PSE_GET                       = C.ETHTOOL_MSG_PSE_GET
+	ETHTOOL_MSG_PSE_SET                       = C.ETHTOOL_MSG_PSE_SET
+	ETHTOOL_MSG_RSS_GET                       = C.ETHTOOL_MSG_RSS_GET
 	ETHTOOL_MSG_USER_MAX                      = C.ETHTOOL_MSG_USER_MAX
 	ETHTOOL_MSG_KERNEL_NONE                   = C.ETHTOOL_MSG_KERNEL_NONE
 	ETHTOOL_MSG_STRSET_GET_REPLY              = C.ETHTOOL_MSG_STRSET_GET_REPLY
@@ -3455,6 +3586,15 @@ const (
 	ETHTOOL_MSG_CABLE_TEST_NTF                = C.ETHTOOL_MSG_CABLE_TEST_NTF
 	ETHTOOL_MSG_CABLE_TEST_TDR_NTF            = C.ETHTOOL_MSG_CABLE_TEST_TDR_NTF
 	ETHTOOL_MSG_TUNNEL_INFO_GET_REPLY         = C.ETHTOOL_MSG_TUNNEL_INFO_GET_REPLY
+	ETHTOOL_MSG_FEC_GET_REPLY                 = C.ETHTOOL_MSG_FEC_GET_REPLY
+	ETHTOOL_MSG_FEC_NTF                       = C.ETHTOOL_MSG_FEC_NTF
+	ETHTOOL_MSG_MODULE_EEPROM_GET_REPLY       = C.ETHTOOL_MSG_MODULE_EEPROM_GET_REPLY
+	ETHTOOL_MSG_STATS_GET_REPLY               = C.ETHTOOL_MSG_STATS_GET_REPLY
+	ETHTOOL_MSG_PHC_VCLOCKS_GET_REPLY         = C.ETHTOOL_MSG_PHC_VCLOCKS_GET_REPLY
+	ETHTOOL_MSG_MODULE_GET_REPLY              = C.ETHTOOL_MSG_MODULE_GET_REPLY
+	ETHTOOL_MSG_MODULE_NTF                    = C.ETHTOOL_MSG_MODULE_NTF
+	ETHTOOL_MSG_PSE_GET_REPLY                 = C.ETHTOOL_MSG_PSE_GET_REPLY
+	ETHTOOL_MSG_RSS_GET_REPLY                 = C.ETHTOOL_MSG_RSS_GET_REPLY
 	ETHTOOL_MSG_KERNEL_MAX                    = C.ETHTOOL_MSG_KERNEL_MAX
 	ETHTOOL_A_HEADER_UNSPEC                   = C.ETHTOOL_A_HEADER_UNSPEC
 	ETHTOOL_A_HEADER_DEV_INDEX                = C.ETHTOOL_A_HEADER_DEV_INDEX
@@ -3514,6 +3654,7 @@ const (
 	ETHTOOL_A_LINKMODES_MASTER_SLAVE_CFG      = C.ETHTOOL_A_LINKMODES_MASTER_SLAVE_CFG
 	ETHTOOL_A_LINKMODES_MASTER_SLAVE_STATE    = C.ETHTOOL_A_LINKMODES_MASTER_SLAVE_STATE
 	ETHTOOL_A_LINKMODES_LANES                 = C.ETHTOOL_A_LINKMODES_LANES
+	ETHTOOL_A_LINKMODES_RATE_MATCHING         = C.ETHTOOL_A_LINKMODES_RATE_MATCHING
 	ETHTOOL_A_LINKMODES_MAX                   = C.ETHTOOL_A_LINKMODES_MAX
 	ETHTOOL_A_LINKSTATE_UNSPEC                = C.ETHTOOL_A_LINKSTATE_UNSPEC
 	ETHTOOL_A_LINKSTATE_HEADER                = C.ETHTOOL_A_LINKSTATE_HEADER
@@ -3522,6 +3663,7 @@ const (
 	ETHTOOL_A_LINKSTATE_SQI_MAX               = C.ETHTOOL_A_LINKSTATE_SQI_MAX
 	ETHTOOL_A_LINKSTATE_EXT_STATE             = C.ETHTOOL_A_LINKSTATE_EXT_STATE
 	ETHTOOL_A_LINKSTATE_EXT_SUBSTATE          = C.ETHTOOL_A_LINKSTATE_EXT_SUBSTATE
+	ETHTOOL_A_LINKSTATE_EXT_DOWN_CNT          = C.ETHTOOL_A_LINKSTATE_EXT_DOWN_CNT
 	ETHTOOL_A_LINKSTATE_MAX                   = C.ETHTOOL_A_LINKSTATE_MAX
 	ETHTOOL_A_DEBUG_UNSPEC                    = C.ETHTOOL_A_DEBUG_UNSPEC
 	ETHTOOL_A_DEBUG_HEADER                    = C.ETHTOOL_A_DEBUG_HEADER
@@ -3553,6 +3695,10 @@ const (
 	ETHTOOL_A_RINGS_RX_MINI                   = C.ETHTOOL_A_RINGS_RX_MINI
 	ETHTOOL_A_RINGS_RX_JUMBO                  = C.ETHTOOL_A_RINGS_RX_JUMBO
 	ETHTOOL_A_RINGS_TX                        = C.ETHTOOL_A_RINGS_TX
+	ETHTOOL_A_RINGS_RX_BUF_LEN                = C.ETHTOOL_A_RINGS_RX_BUF_LEN
+	ETHTOOL_A_RINGS_TCP_DATA_SPLIT            = C.ETHTOOL_A_RINGS_TCP_DATA_SPLIT
+	ETHTOOL_A_RINGS_CQE_SIZE                  = C.ETHTOOL_A_RINGS_CQE_SIZE
+	ETHTOOL_A_RINGS_TX_PUSH                   = C.ETHTOOL_A_RINGS_TX_PUSH
 	ETHTOOL_A_RINGS_MAX                       = C.ETHTOOL_A_RINGS_MAX
 	ETHTOOL_A_CHANNELS_UNSPEC                 = C.ETHTOOL_A_CHANNELS_UNSPEC
 	ETHTOOL_A_CHANNELS_HEADER                 = C.ETHTOOL_A_CHANNELS_HEADER
@@ -3704,6 +3850,8 @@ const (
 	ETHTOOL_A_TUNNEL_INFO_UDP_PORTS           = C.ETHTOOL_A_TUNNEL_INFO_UDP_PORTS
 	ETHTOOL_A_TUNNEL_INFO_MAX                 = C.ETHTOOL_A_TUNNEL_INFO_MAX
 )
+
+const SPEED_UNKNOWN = C.SPEED_UNKNOWN
 
 type EthtoolDrvinfo C.struct_ethtool_drvinfo
 
@@ -3871,3 +4019,1674 @@ const (
 // mount_setattr
 
 type MountAttr C.struct_mount_attr
+
+// WireGuard generic netlink interface
+
+// Generated by:
+// perl -nlE '/^\s*(WG\w+)/ && say "$1 = C.$1"' /usr/include/linux/wireguard.h
+const (
+	WG_CMD_GET_DEVICE                      = C.WG_CMD_GET_DEVICE
+	WG_CMD_SET_DEVICE                      = C.WG_CMD_SET_DEVICE
+	WGDEVICE_F_REPLACE_PEERS               = C.WGDEVICE_F_REPLACE_PEERS
+	WGDEVICE_A_UNSPEC                      = C.WGDEVICE_A_UNSPEC
+	WGDEVICE_A_IFINDEX                     = C.WGDEVICE_A_IFINDEX
+	WGDEVICE_A_IFNAME                      = C.WGDEVICE_A_IFNAME
+	WGDEVICE_A_PRIVATE_KEY                 = C.WGDEVICE_A_PRIVATE_KEY
+	WGDEVICE_A_PUBLIC_KEY                  = C.WGDEVICE_A_PUBLIC_KEY
+	WGDEVICE_A_FLAGS                       = C.WGDEVICE_A_FLAGS
+	WGDEVICE_A_LISTEN_PORT                 = C.WGDEVICE_A_LISTEN_PORT
+	WGDEVICE_A_FWMARK                      = C.WGDEVICE_A_FWMARK
+	WGDEVICE_A_PEERS                       = C.WGDEVICE_A_PEERS
+	WGPEER_F_REMOVE_ME                     = C.WGPEER_F_REMOVE_ME
+	WGPEER_F_REPLACE_ALLOWEDIPS            = C.WGPEER_F_REPLACE_ALLOWEDIPS
+	WGPEER_F_UPDATE_ONLY                   = C.WGPEER_F_UPDATE_ONLY
+	WGPEER_A_UNSPEC                        = C.WGPEER_A_UNSPEC
+	WGPEER_A_PUBLIC_KEY                    = C.WGPEER_A_PUBLIC_KEY
+	WGPEER_A_PRESHARED_KEY                 = C.WGPEER_A_PRESHARED_KEY
+	WGPEER_A_FLAGS                         = C.WGPEER_A_FLAGS
+	WGPEER_A_ENDPOINT                      = C.WGPEER_A_ENDPOINT
+	WGPEER_A_PERSISTENT_KEEPALIVE_INTERVAL = C.WGPEER_A_PERSISTENT_KEEPALIVE_INTERVAL
+	WGPEER_A_LAST_HANDSHAKE_TIME           = C.WGPEER_A_LAST_HANDSHAKE_TIME
+	WGPEER_A_RX_BYTES                      = C.WGPEER_A_RX_BYTES
+	WGPEER_A_TX_BYTES                      = C.WGPEER_A_TX_BYTES
+	WGPEER_A_ALLOWEDIPS                    = C.WGPEER_A_ALLOWEDIPS
+	WGPEER_A_PROTOCOL_VERSION              = C.WGPEER_A_PROTOCOL_VERSION
+	WGALLOWEDIP_A_UNSPEC                   = C.WGALLOWEDIP_A_UNSPEC
+	WGALLOWEDIP_A_FAMILY                   = C.WGALLOWEDIP_A_FAMILY
+	WGALLOWEDIP_A_IPADDR                   = C.WGALLOWEDIP_A_IPADDR
+	WGALLOWEDIP_A_CIDR_MASK                = C.WGALLOWEDIP_A_CIDR_MASK
+)
+
+// netlink attribute types and policies
+
+// Generated by:
+// perl -nlE '/^\s*(NL_ATTR\w+)/ && say "$1 = C.$1"' /usr/include/linux/netlink.h
+// perl -nlE '/^\s*(NL_POLICY\w+)/ && say "$1 = C.$1"' /usr/include/linux/netlink.h
+const (
+	NL_ATTR_TYPE_INVALID      = C.NL_ATTR_TYPE_INVALID
+	NL_ATTR_TYPE_FLAG         = C.NL_ATTR_TYPE_FLAG
+	NL_ATTR_TYPE_U8           = C.NL_ATTR_TYPE_U8
+	NL_ATTR_TYPE_U16          = C.NL_ATTR_TYPE_U16
+	NL_ATTR_TYPE_U32          = C.NL_ATTR_TYPE_U32
+	NL_ATTR_TYPE_U64          = C.NL_ATTR_TYPE_U64
+	NL_ATTR_TYPE_S8           = C.NL_ATTR_TYPE_S8
+	NL_ATTR_TYPE_S16          = C.NL_ATTR_TYPE_S16
+	NL_ATTR_TYPE_S32          = C.NL_ATTR_TYPE_S32
+	NL_ATTR_TYPE_S64          = C.NL_ATTR_TYPE_S64
+	NL_ATTR_TYPE_BINARY       = C.NL_ATTR_TYPE_BINARY
+	NL_ATTR_TYPE_STRING       = C.NL_ATTR_TYPE_STRING
+	NL_ATTR_TYPE_NUL_STRING   = C.NL_ATTR_TYPE_NUL_STRING
+	NL_ATTR_TYPE_NESTED       = C.NL_ATTR_TYPE_NESTED
+	NL_ATTR_TYPE_NESTED_ARRAY = C.NL_ATTR_TYPE_NESTED_ARRAY
+	NL_ATTR_TYPE_BITFIELD32   = C.NL_ATTR_TYPE_BITFIELD32
+
+	NL_POLICY_TYPE_ATTR_UNSPEC          = C.NL_POLICY_TYPE_ATTR_UNSPEC
+	NL_POLICY_TYPE_ATTR_TYPE            = C.NL_POLICY_TYPE_ATTR_TYPE
+	NL_POLICY_TYPE_ATTR_MIN_VALUE_S     = C.NL_POLICY_TYPE_ATTR_MIN_VALUE_S
+	NL_POLICY_TYPE_ATTR_MAX_VALUE_S     = C.NL_POLICY_TYPE_ATTR_MAX_VALUE_S
+	NL_POLICY_TYPE_ATTR_MIN_VALUE_U     = C.NL_POLICY_TYPE_ATTR_MIN_VALUE_U
+	NL_POLICY_TYPE_ATTR_MAX_VALUE_U     = C.NL_POLICY_TYPE_ATTR_MAX_VALUE_U
+	NL_POLICY_TYPE_ATTR_MIN_LENGTH      = C.NL_POLICY_TYPE_ATTR_MIN_LENGTH
+	NL_POLICY_TYPE_ATTR_MAX_LENGTH      = C.NL_POLICY_TYPE_ATTR_MAX_LENGTH
+	NL_POLICY_TYPE_ATTR_POLICY_IDX      = C.NL_POLICY_TYPE_ATTR_POLICY_IDX
+	NL_POLICY_TYPE_ATTR_POLICY_MAXTYPE  = C.NL_POLICY_TYPE_ATTR_POLICY_MAXTYPE
+	NL_POLICY_TYPE_ATTR_BITFIELD32_MASK = C.NL_POLICY_TYPE_ATTR_BITFIELD32_MASK
+	NL_POLICY_TYPE_ATTR_PAD             = C.NL_POLICY_TYPE_ATTR_PAD
+	NL_POLICY_TYPE_ATTR_MASK            = C.NL_POLICY_TYPE_ATTR_MASK
+	NL_POLICY_TYPE_ATTR_MAX             = C.NL_POLICY_TYPE_ATTR_MAX
+)
+
+// CAN netlink types
+
+type CANBitTiming C.struct_can_bittiming
+
+type CANBitTimingConst C.struct_my_can_bittiming_const
+
+type CANClock C.struct_can_clock
+
+type CANBusErrorCounters C.struct_can_berr_counter
+
+type CANCtrlMode C.struct_can_ctrlmode
+
+type CANDeviceStats C.struct_can_device_stats
+
+// Generated by:
+// perl -nlE '/^\s*(CAN_STATE\w+)/ && say "$1 = C.$1"' /usr/include/linux/can/netlink.h
+const (
+	CAN_STATE_ERROR_ACTIVE  = C.CAN_STATE_ERROR_ACTIVE
+	CAN_STATE_ERROR_WARNING = C.CAN_STATE_ERROR_WARNING
+	CAN_STATE_ERROR_PASSIVE = C.CAN_STATE_ERROR_PASSIVE
+	CAN_STATE_BUS_OFF       = C.CAN_STATE_BUS_OFF
+	CAN_STATE_STOPPED       = C.CAN_STATE_STOPPED
+	CAN_STATE_SLEEPING      = C.CAN_STATE_SLEEPING
+	CAN_STATE_MAX           = C.CAN_STATE_MAX
+)
+
+// Generated by:
+// perl -nlE '/^\s*(IFLA_CAN\w+)/ && say "$1 = C.$1"' /usr/include/linux/can/netlink.h
+const (
+	IFLA_CAN_UNSPEC               = C.IFLA_CAN_UNSPEC
+	IFLA_CAN_BITTIMING            = C.IFLA_CAN_BITTIMING
+	IFLA_CAN_BITTIMING_CONST      = C.IFLA_CAN_BITTIMING_CONST
+	IFLA_CAN_CLOCK                = C.IFLA_CAN_CLOCK
+	IFLA_CAN_STATE                = C.IFLA_CAN_STATE
+	IFLA_CAN_CTRLMODE             = C.IFLA_CAN_CTRLMODE
+	IFLA_CAN_RESTART_MS           = C.IFLA_CAN_RESTART_MS
+	IFLA_CAN_RESTART              = C.IFLA_CAN_RESTART
+	IFLA_CAN_BERR_COUNTER         = C.IFLA_CAN_BERR_COUNTER
+	IFLA_CAN_DATA_BITTIMING       = C.IFLA_CAN_DATA_BITTIMING
+	IFLA_CAN_DATA_BITTIMING_CONST = C.IFLA_CAN_DATA_BITTIMING_CONST
+	IFLA_CAN_TERMINATION          = C.IFLA_CAN_TERMINATION
+	IFLA_CAN_TERMINATION_CONST    = C.IFLA_CAN_TERMINATION_CONST
+	IFLA_CAN_BITRATE_CONST        = C.IFLA_CAN_BITRATE_CONST
+	IFLA_CAN_DATA_BITRATE_CONST   = C.IFLA_CAN_DATA_BITRATE_CONST
+	IFLA_CAN_BITRATE_MAX          = C.IFLA_CAN_BITRATE_MAX
+)
+
+// Kernel connection multiplexor
+
+type KCMAttach C.struct_kcm_attach
+
+type KCMUnattach C.struct_kcm_unattach
+
+type KCMClone C.struct_kcm_clone
+
+// nl80211 generic netlink
+
+// Generated by the following steps:
+//
+// perl -nlE '/^#define (NL80211_\w+)/ && say "$1 = C.$1"' /usr/include/linux/nl80211.h > define.txt
+// perl -nlE '/^\s*(NL80211_\w+)/ && say "$1 = C.$1"' /usr/include/linux/nl80211.h > enum.txt
+// cat define.txt enum.txt | sort --unique
+//
+// nl80211 has some duplicated values between enums and C preprocessor macros,
+// so this list must be sorted and made unique.
+const (
+	NL80211_AC_BE                                           = C.NL80211_AC_BE
+	NL80211_AC_BK                                           = C.NL80211_AC_BK
+	NL80211_ACL_POLICY_ACCEPT_UNLESS_LISTED                 = C.NL80211_ACL_POLICY_ACCEPT_UNLESS_LISTED
+	NL80211_ACL_POLICY_DENY_UNLESS_LISTED                   = C.NL80211_ACL_POLICY_DENY_UNLESS_LISTED
+	NL80211_AC_VI                                           = C.NL80211_AC_VI
+	NL80211_AC_VO                                           = C.NL80211_AC_VO
+	NL80211_AP_SETTINGS_EXTERNAL_AUTH_SUPPORT               = C.NL80211_AP_SETTINGS_EXTERNAL_AUTH_SUPPORT
+	NL80211_AP_SETTINGS_SA_QUERY_OFFLOAD_SUPPORT            = C.NL80211_AP_SETTINGS_SA_QUERY_OFFLOAD_SUPPORT
+	NL80211_AP_SME_SA_QUERY_OFFLOAD                         = C.NL80211_AP_SME_SA_QUERY_OFFLOAD
+	NL80211_ATTR_4ADDR                                      = C.NL80211_ATTR_4ADDR
+	NL80211_ATTR_ACK                                        = C.NL80211_ATTR_ACK
+	NL80211_ATTR_ACK_SIGNAL                                 = C.NL80211_ATTR_ACK_SIGNAL
+	NL80211_ATTR_ACL_POLICY                                 = C.NL80211_ATTR_ACL_POLICY
+	NL80211_ATTR_ADMITTED_TIME                              = C.NL80211_ATTR_ADMITTED_TIME
+	NL80211_ATTR_AIRTIME_WEIGHT                             = C.NL80211_ATTR_AIRTIME_WEIGHT
+	NL80211_ATTR_AKM_SUITES                                 = C.NL80211_ATTR_AKM_SUITES
+	NL80211_ATTR_AP_ISOLATE                                 = C.NL80211_ATTR_AP_ISOLATE
+	NL80211_ATTR_AP_SETTINGS_FLAGS                          = C.NL80211_ATTR_AP_SETTINGS_FLAGS
+	NL80211_ATTR_AUTH_DATA                                  = C.NL80211_ATTR_AUTH_DATA
+	NL80211_ATTR_AUTH_TYPE                                  = C.NL80211_ATTR_AUTH_TYPE
+	NL80211_ATTR_BANDS                                      = C.NL80211_ATTR_BANDS
+	NL80211_ATTR_BEACON_HEAD                                = C.NL80211_ATTR_BEACON_HEAD
+	NL80211_ATTR_BEACON_INTERVAL                            = C.NL80211_ATTR_BEACON_INTERVAL
+	NL80211_ATTR_BEACON_TAIL                                = C.NL80211_ATTR_BEACON_TAIL
+	NL80211_ATTR_BG_SCAN_PERIOD                             = C.NL80211_ATTR_BG_SCAN_PERIOD
+	NL80211_ATTR_BSS_BASIC_RATES                            = C.NL80211_ATTR_BSS_BASIC_RATES
+	NL80211_ATTR_BSS                                        = C.NL80211_ATTR_BSS
+	NL80211_ATTR_BSS_CTS_PROT                               = C.NL80211_ATTR_BSS_CTS_PROT
+	NL80211_ATTR_BSS_HT_OPMODE                              = C.NL80211_ATTR_BSS_HT_OPMODE
+	NL80211_ATTR_BSSID                                      = C.NL80211_ATTR_BSSID
+	NL80211_ATTR_BSS_SELECT                                 = C.NL80211_ATTR_BSS_SELECT
+	NL80211_ATTR_BSS_SHORT_PREAMBLE                         = C.NL80211_ATTR_BSS_SHORT_PREAMBLE
+	NL80211_ATTR_BSS_SHORT_SLOT_TIME                        = C.NL80211_ATTR_BSS_SHORT_SLOT_TIME
+	NL80211_ATTR_CENTER_FREQ1                               = C.NL80211_ATTR_CENTER_FREQ1
+	NL80211_ATTR_CENTER_FREQ1_OFFSET                        = C.NL80211_ATTR_CENTER_FREQ1_OFFSET
+	NL80211_ATTR_CENTER_FREQ2                               = C.NL80211_ATTR_CENTER_FREQ2
+	NL80211_ATTR_CHANNEL_WIDTH                              = C.NL80211_ATTR_CHANNEL_WIDTH
+	NL80211_ATTR_CH_SWITCH_BLOCK_TX                         = C.NL80211_ATTR_CH_SWITCH_BLOCK_TX
+	NL80211_ATTR_CH_SWITCH_COUNT                            = C.NL80211_ATTR_CH_SWITCH_COUNT
+	NL80211_ATTR_CIPHER_SUITE_GROUP                         = C.NL80211_ATTR_CIPHER_SUITE_GROUP
+	NL80211_ATTR_CIPHER_SUITES                              = C.NL80211_ATTR_CIPHER_SUITES
+	NL80211_ATTR_CIPHER_SUITES_PAIRWISE                     = C.NL80211_ATTR_CIPHER_SUITES_PAIRWISE
+	NL80211_ATTR_CNTDWN_OFFS_BEACON                         = C.NL80211_ATTR_CNTDWN_OFFS_BEACON
+	NL80211_ATTR_CNTDWN_OFFS_PRESP                          = C.NL80211_ATTR_CNTDWN_OFFS_PRESP
+	NL80211_ATTR_COALESCE_RULE                              = C.NL80211_ATTR_COALESCE_RULE
+	NL80211_ATTR_COALESCE_RULE_CONDITION                    = C.NL80211_ATTR_COALESCE_RULE_CONDITION
+	NL80211_ATTR_COALESCE_RULE_DELAY                        = C.NL80211_ATTR_COALESCE_RULE_DELAY
+	NL80211_ATTR_COALESCE_RULE_MAX                          = C.NL80211_ATTR_COALESCE_RULE_MAX
+	NL80211_ATTR_COALESCE_RULE_PKT_PATTERN                  = C.NL80211_ATTR_COALESCE_RULE_PKT_PATTERN
+	NL80211_ATTR_COLOR_CHANGE_COLOR                         = C.NL80211_ATTR_COLOR_CHANGE_COLOR
+	NL80211_ATTR_COLOR_CHANGE_COUNT                         = C.NL80211_ATTR_COLOR_CHANGE_COUNT
+	NL80211_ATTR_COLOR_CHANGE_ELEMS                         = C.NL80211_ATTR_COLOR_CHANGE_ELEMS
+	NL80211_ATTR_CONN_FAILED_REASON                         = C.NL80211_ATTR_CONN_FAILED_REASON
+	NL80211_ATTR_CONTROL_PORT                               = C.NL80211_ATTR_CONTROL_PORT
+	NL80211_ATTR_CONTROL_PORT_ETHERTYPE                     = C.NL80211_ATTR_CONTROL_PORT_ETHERTYPE
+	NL80211_ATTR_CONTROL_PORT_NO_ENCRYPT                    = C.NL80211_ATTR_CONTROL_PORT_NO_ENCRYPT
+	NL80211_ATTR_CONTROL_PORT_NO_PREAUTH                    = C.NL80211_ATTR_CONTROL_PORT_NO_PREAUTH
+	NL80211_ATTR_CONTROL_PORT_OVER_NL80211                  = C.NL80211_ATTR_CONTROL_PORT_OVER_NL80211
+	NL80211_ATTR_COOKIE                                     = C.NL80211_ATTR_COOKIE
+	NL80211_ATTR_CQM_BEACON_LOSS_EVENT                      = C.NL80211_ATTR_CQM_BEACON_LOSS_EVENT
+	NL80211_ATTR_CQM                                        = C.NL80211_ATTR_CQM
+	NL80211_ATTR_CQM_MAX                                    = C.NL80211_ATTR_CQM_MAX
+	NL80211_ATTR_CQM_PKT_LOSS_EVENT                         = C.NL80211_ATTR_CQM_PKT_LOSS_EVENT
+	NL80211_ATTR_CQM_RSSI_HYST                              = C.NL80211_ATTR_CQM_RSSI_HYST
+	NL80211_ATTR_CQM_RSSI_LEVEL                             = C.NL80211_ATTR_CQM_RSSI_LEVEL
+	NL80211_ATTR_CQM_RSSI_THOLD                             = C.NL80211_ATTR_CQM_RSSI_THOLD
+	NL80211_ATTR_CQM_RSSI_THRESHOLD_EVENT                   = C.NL80211_ATTR_CQM_RSSI_THRESHOLD_EVENT
+	NL80211_ATTR_CQM_TXE_INTVL                              = C.NL80211_ATTR_CQM_TXE_INTVL
+	NL80211_ATTR_CQM_TXE_PKTS                               = C.NL80211_ATTR_CQM_TXE_PKTS
+	NL80211_ATTR_CQM_TXE_RATE                               = C.NL80211_ATTR_CQM_TXE_RATE
+	NL80211_ATTR_CRIT_PROT_ID                               = C.NL80211_ATTR_CRIT_PROT_ID
+	NL80211_ATTR_CSA_C_OFF_BEACON                           = C.NL80211_ATTR_CSA_C_OFF_BEACON
+	NL80211_ATTR_CSA_C_OFF_PRESP                            = C.NL80211_ATTR_CSA_C_OFF_PRESP
+	NL80211_ATTR_CSA_C_OFFSETS_TX                           = C.NL80211_ATTR_CSA_C_OFFSETS_TX
+	NL80211_ATTR_CSA_IES                                    = C.NL80211_ATTR_CSA_IES
+	NL80211_ATTR_DEVICE_AP_SME                              = C.NL80211_ATTR_DEVICE_AP_SME
+	NL80211_ATTR_DFS_CAC_TIME                               = C.NL80211_ATTR_DFS_CAC_TIME
+	NL80211_ATTR_DFS_REGION                                 = C.NL80211_ATTR_DFS_REGION
+	NL80211_ATTR_DISABLE_EHT                                = C.NL80211_ATTR_DISABLE_EHT
+	NL80211_ATTR_DISABLE_HE                                 = C.NL80211_ATTR_DISABLE_HE
+	NL80211_ATTR_DISABLE_HT                                 = C.NL80211_ATTR_DISABLE_HT
+	NL80211_ATTR_DISABLE_VHT                                = C.NL80211_ATTR_DISABLE_VHT
+	NL80211_ATTR_DISCONNECTED_BY_AP                         = C.NL80211_ATTR_DISCONNECTED_BY_AP
+	NL80211_ATTR_DONT_WAIT_FOR_ACK                          = C.NL80211_ATTR_DONT_WAIT_FOR_ACK
+	NL80211_ATTR_DTIM_PERIOD                                = C.NL80211_ATTR_DTIM_PERIOD
+	NL80211_ATTR_DURATION                                   = C.NL80211_ATTR_DURATION
+	NL80211_ATTR_EHT_CAPABILITY                             = C.NL80211_ATTR_EHT_CAPABILITY
+	NL80211_ATTR_EML_CAPABILITY                             = C.NL80211_ATTR_EML_CAPABILITY
+	NL80211_ATTR_EXT_CAPA                                   = C.NL80211_ATTR_EXT_CAPA
+	NL80211_ATTR_EXT_CAPA_MASK                              = C.NL80211_ATTR_EXT_CAPA_MASK
+	NL80211_ATTR_EXTERNAL_AUTH_ACTION                       = C.NL80211_ATTR_EXTERNAL_AUTH_ACTION
+	NL80211_ATTR_EXTERNAL_AUTH_SUPPORT                      = C.NL80211_ATTR_EXTERNAL_AUTH_SUPPORT
+	NL80211_ATTR_EXT_FEATURES                               = C.NL80211_ATTR_EXT_FEATURES
+	NL80211_ATTR_FEATURE_FLAGS                              = C.NL80211_ATTR_FEATURE_FLAGS
+	NL80211_ATTR_FILS_CACHE_ID                              = C.NL80211_ATTR_FILS_CACHE_ID
+	NL80211_ATTR_FILS_DISCOVERY                             = C.NL80211_ATTR_FILS_DISCOVERY
+	NL80211_ATTR_FILS_ERP_NEXT_SEQ_NUM                      = C.NL80211_ATTR_FILS_ERP_NEXT_SEQ_NUM
+	NL80211_ATTR_FILS_ERP_REALM                             = C.NL80211_ATTR_FILS_ERP_REALM
+	NL80211_ATTR_FILS_ERP_RRK                               = C.NL80211_ATTR_FILS_ERP_RRK
+	NL80211_ATTR_FILS_ERP_USERNAME                          = C.NL80211_ATTR_FILS_ERP_USERNAME
+	NL80211_ATTR_FILS_KEK                                   = C.NL80211_ATTR_FILS_KEK
+	NL80211_ATTR_FILS_NONCES                                = C.NL80211_ATTR_FILS_NONCES
+	NL80211_ATTR_FRAME                                      = C.NL80211_ATTR_FRAME
+	NL80211_ATTR_FRAME_MATCH                                = C.NL80211_ATTR_FRAME_MATCH
+	NL80211_ATTR_FRAME_TYPE                                 = C.NL80211_ATTR_FRAME_TYPE
+	NL80211_ATTR_FREQ_AFTER                                 = C.NL80211_ATTR_FREQ_AFTER
+	NL80211_ATTR_FREQ_BEFORE                                = C.NL80211_ATTR_FREQ_BEFORE
+	NL80211_ATTR_FREQ_FIXED                                 = C.NL80211_ATTR_FREQ_FIXED
+	NL80211_ATTR_FREQ_RANGE_END                             = C.NL80211_ATTR_FREQ_RANGE_END
+	NL80211_ATTR_FREQ_RANGE_MAX_BW                          = C.NL80211_ATTR_FREQ_RANGE_MAX_BW
+	NL80211_ATTR_FREQ_RANGE_START                           = C.NL80211_ATTR_FREQ_RANGE_START
+	NL80211_ATTR_FTM_RESPONDER                              = C.NL80211_ATTR_FTM_RESPONDER
+	NL80211_ATTR_FTM_RESPONDER_STATS                        = C.NL80211_ATTR_FTM_RESPONDER_STATS
+	NL80211_ATTR_GENERATION                                 = C.NL80211_ATTR_GENERATION
+	NL80211_ATTR_HANDLE_DFS                                 = C.NL80211_ATTR_HANDLE_DFS
+	NL80211_ATTR_HE_6GHZ_CAPABILITY                         = C.NL80211_ATTR_HE_6GHZ_CAPABILITY
+	NL80211_ATTR_HE_BSS_COLOR                               = C.NL80211_ATTR_HE_BSS_COLOR
+	NL80211_ATTR_HE_CAPABILITY                              = C.NL80211_ATTR_HE_CAPABILITY
+	NL80211_ATTR_HE_OBSS_PD                                 = C.NL80211_ATTR_HE_OBSS_PD
+	NL80211_ATTR_HIDDEN_SSID                                = C.NL80211_ATTR_HIDDEN_SSID
+	NL80211_ATTR_HT_CAPABILITY                              = C.NL80211_ATTR_HT_CAPABILITY
+	NL80211_ATTR_HT_CAPABILITY_MASK                         = C.NL80211_ATTR_HT_CAPABILITY_MASK
+	NL80211_ATTR_IE_ASSOC_RESP                              = C.NL80211_ATTR_IE_ASSOC_RESP
+	NL80211_ATTR_IE                                         = C.NL80211_ATTR_IE
+	NL80211_ATTR_IE_PROBE_RESP                              = C.NL80211_ATTR_IE_PROBE_RESP
+	NL80211_ATTR_IE_RIC                                     = C.NL80211_ATTR_IE_RIC
+	NL80211_ATTR_IFACE_SOCKET_OWNER                         = C.NL80211_ATTR_IFACE_SOCKET_OWNER
+	NL80211_ATTR_IFINDEX                                    = C.NL80211_ATTR_IFINDEX
+	NL80211_ATTR_IFNAME                                     = C.NL80211_ATTR_IFNAME
+	NL80211_ATTR_IFTYPE_AKM_SUITES                          = C.NL80211_ATTR_IFTYPE_AKM_SUITES
+	NL80211_ATTR_IFTYPE                                     = C.NL80211_ATTR_IFTYPE
+	NL80211_ATTR_IFTYPE_EXT_CAPA                            = C.NL80211_ATTR_IFTYPE_EXT_CAPA
+	NL80211_ATTR_INACTIVITY_TIMEOUT                         = C.NL80211_ATTR_INACTIVITY_TIMEOUT
+	NL80211_ATTR_INTERFACE_COMBINATIONS                     = C.NL80211_ATTR_INTERFACE_COMBINATIONS
+	NL80211_ATTR_KEY_CIPHER                                 = C.NL80211_ATTR_KEY_CIPHER
+	NL80211_ATTR_KEY                                        = C.NL80211_ATTR_KEY
+	NL80211_ATTR_KEY_DATA                                   = C.NL80211_ATTR_KEY_DATA
+	NL80211_ATTR_KEY_DEFAULT                                = C.NL80211_ATTR_KEY_DEFAULT
+	NL80211_ATTR_KEY_DEFAULT_MGMT                           = C.NL80211_ATTR_KEY_DEFAULT_MGMT
+	NL80211_ATTR_KEY_DEFAULT_TYPES                          = C.NL80211_ATTR_KEY_DEFAULT_TYPES
+	NL80211_ATTR_KEY_IDX                                    = C.NL80211_ATTR_KEY_IDX
+	NL80211_ATTR_KEYS                                       = C.NL80211_ATTR_KEYS
+	NL80211_ATTR_KEY_SEQ                                    = C.NL80211_ATTR_KEY_SEQ
+	NL80211_ATTR_KEY_TYPE                                   = C.NL80211_ATTR_KEY_TYPE
+	NL80211_ATTR_LOCAL_MESH_POWER_MODE                      = C.NL80211_ATTR_LOCAL_MESH_POWER_MODE
+	NL80211_ATTR_LOCAL_STATE_CHANGE                         = C.NL80211_ATTR_LOCAL_STATE_CHANGE
+	NL80211_ATTR_MAC_ACL_MAX                                = C.NL80211_ATTR_MAC_ACL_MAX
+	NL80211_ATTR_MAC_ADDRS                                  = C.NL80211_ATTR_MAC_ADDRS
+	NL80211_ATTR_MAC                                        = C.NL80211_ATTR_MAC
+	NL80211_ATTR_MAC_HINT                                   = C.NL80211_ATTR_MAC_HINT
+	NL80211_ATTR_MAC_MASK                                   = C.NL80211_ATTR_MAC_MASK
+	NL80211_ATTR_MAX_AP_ASSOC_STA                           = C.NL80211_ATTR_MAX_AP_ASSOC_STA
+	NL80211_ATTR_MAX                                        = C.NL80211_ATTR_MAX
+	NL80211_ATTR_MAX_CRIT_PROT_DURATION                     = C.NL80211_ATTR_MAX_CRIT_PROT_DURATION
+	NL80211_ATTR_MAX_CSA_COUNTERS                           = C.NL80211_ATTR_MAX_CSA_COUNTERS
+	NL80211_ATTR_MAX_MATCH_SETS                             = C.NL80211_ATTR_MAX_MATCH_SETS
+	NL80211_ATTR_MAX_NUM_AKM_SUITES                         = C.NL80211_ATTR_MAX_NUM_AKM_SUITES
+	NL80211_ATTR_MAX_NUM_PMKIDS                             = C.NL80211_ATTR_MAX_NUM_PMKIDS
+	NL80211_ATTR_MAX_NUM_SCAN_SSIDS                         = C.NL80211_ATTR_MAX_NUM_SCAN_SSIDS
+	NL80211_ATTR_MAX_NUM_SCHED_SCAN_PLANS                   = C.NL80211_ATTR_MAX_NUM_SCHED_SCAN_PLANS
+	NL80211_ATTR_MAX_NUM_SCHED_SCAN_SSIDS                   = C.NL80211_ATTR_MAX_NUM_SCHED_SCAN_SSIDS
+	NL80211_ATTR_MAX_REMAIN_ON_CHANNEL_DURATION             = C.NL80211_ATTR_MAX_REMAIN_ON_CHANNEL_DURATION
+	NL80211_ATTR_MAX_SCAN_IE_LEN                            = C.NL80211_ATTR_MAX_SCAN_IE_LEN
+	NL80211_ATTR_MAX_SCAN_PLAN_INTERVAL                     = C.NL80211_ATTR_MAX_SCAN_PLAN_INTERVAL
+	NL80211_ATTR_MAX_SCAN_PLAN_ITERATIONS                   = C.NL80211_ATTR_MAX_SCAN_PLAN_ITERATIONS
+	NL80211_ATTR_MAX_SCHED_SCAN_IE_LEN                      = C.NL80211_ATTR_MAX_SCHED_SCAN_IE_LEN
+	NL80211_ATTR_MBSSID_CONFIG                              = C.NL80211_ATTR_MBSSID_CONFIG
+	NL80211_ATTR_MBSSID_ELEMS                               = C.NL80211_ATTR_MBSSID_ELEMS
+	NL80211_ATTR_MCAST_RATE                                 = C.NL80211_ATTR_MCAST_RATE
+	NL80211_ATTR_MDID                                       = C.NL80211_ATTR_MDID
+	NL80211_ATTR_MEASUREMENT_DURATION                       = C.NL80211_ATTR_MEASUREMENT_DURATION
+	NL80211_ATTR_MEASUREMENT_DURATION_MANDATORY             = C.NL80211_ATTR_MEASUREMENT_DURATION_MANDATORY
+	NL80211_ATTR_MESH_CONFIG                                = C.NL80211_ATTR_MESH_CONFIG
+	NL80211_ATTR_MESH_ID                                    = C.NL80211_ATTR_MESH_ID
+	NL80211_ATTR_MESH_PEER_AID                              = C.NL80211_ATTR_MESH_PEER_AID
+	NL80211_ATTR_MESH_SETUP                                 = C.NL80211_ATTR_MESH_SETUP
+	NL80211_ATTR_MGMT_SUBTYPE                               = C.NL80211_ATTR_MGMT_SUBTYPE
+	NL80211_ATTR_MLD_ADDR                                   = C.NL80211_ATTR_MLD_ADDR
+	NL80211_ATTR_MLD_CAPA_AND_OPS                           = C.NL80211_ATTR_MLD_CAPA_AND_OPS
+	NL80211_ATTR_MLO_LINK_ID                                = C.NL80211_ATTR_MLO_LINK_ID
+	NL80211_ATTR_MLO_LINKS                                  = C.NL80211_ATTR_MLO_LINKS
+	NL80211_ATTR_MLO_SUPPORT                                = C.NL80211_ATTR_MLO_SUPPORT
+	NL80211_ATTR_MNTR_FLAGS                                 = C.NL80211_ATTR_MNTR_FLAGS
+	NL80211_ATTR_MPATH_INFO                                 = C.NL80211_ATTR_MPATH_INFO
+	NL80211_ATTR_MPATH_NEXT_HOP                             = C.NL80211_ATTR_MPATH_NEXT_HOP
+	NL80211_ATTR_MULTICAST_TO_UNICAST_ENABLED               = C.NL80211_ATTR_MULTICAST_TO_UNICAST_ENABLED
+	NL80211_ATTR_MU_MIMO_FOLLOW_MAC_ADDR                    = C.NL80211_ATTR_MU_MIMO_FOLLOW_MAC_ADDR
+	NL80211_ATTR_MU_MIMO_GROUP_DATA                         = C.NL80211_ATTR_MU_MIMO_GROUP_DATA
+	NL80211_ATTR_NAN_FUNC                                   = C.NL80211_ATTR_NAN_FUNC
+	NL80211_ATTR_NAN_MASTER_PREF                            = C.NL80211_ATTR_NAN_MASTER_PREF
+	NL80211_ATTR_NAN_MATCH                                  = C.NL80211_ATTR_NAN_MATCH
+	NL80211_ATTR_NETNS_FD                                   = C.NL80211_ATTR_NETNS_FD
+	NL80211_ATTR_NOACK_MAP                                  = C.NL80211_ATTR_NOACK_MAP
+	NL80211_ATTR_NSS                                        = C.NL80211_ATTR_NSS
+	NL80211_ATTR_OBSS_COLOR_BITMAP                          = C.NL80211_ATTR_OBSS_COLOR_BITMAP
+	NL80211_ATTR_OFFCHANNEL_TX_OK                           = C.NL80211_ATTR_OFFCHANNEL_TX_OK
+	NL80211_ATTR_OPER_CLASS                                 = C.NL80211_ATTR_OPER_CLASS
+	NL80211_ATTR_OPMODE_NOTIF                               = C.NL80211_ATTR_OPMODE_NOTIF
+	NL80211_ATTR_P2P_CTWINDOW                               = C.NL80211_ATTR_P2P_CTWINDOW
+	NL80211_ATTR_P2P_OPPPS                                  = C.NL80211_ATTR_P2P_OPPPS
+	NL80211_ATTR_PAD                                        = C.NL80211_ATTR_PAD
+	NL80211_ATTR_PBSS                                       = C.NL80211_ATTR_PBSS
+	NL80211_ATTR_PEER_AID                                   = C.NL80211_ATTR_PEER_AID
+	NL80211_ATTR_PEER_MEASUREMENTS                          = C.NL80211_ATTR_PEER_MEASUREMENTS
+	NL80211_ATTR_PID                                        = C.NL80211_ATTR_PID
+	NL80211_ATTR_PMK                                        = C.NL80211_ATTR_PMK
+	NL80211_ATTR_PMKID                                      = C.NL80211_ATTR_PMKID
+	NL80211_ATTR_PMK_LIFETIME                               = C.NL80211_ATTR_PMK_LIFETIME
+	NL80211_ATTR_PMKR0_NAME                                 = C.NL80211_ATTR_PMKR0_NAME
+	NL80211_ATTR_PMK_REAUTH_THRESHOLD                       = C.NL80211_ATTR_PMK_REAUTH_THRESHOLD
+	NL80211_ATTR_PMKSA_CANDIDATE                            = C.NL80211_ATTR_PMKSA_CANDIDATE
+	NL80211_ATTR_PORT_AUTHORIZED                            = C.NL80211_ATTR_PORT_AUTHORIZED
+	NL80211_ATTR_POWER_RULE_MAX_ANT_GAIN                    = C.NL80211_ATTR_POWER_RULE_MAX_ANT_GAIN
+	NL80211_ATTR_POWER_RULE_MAX_EIRP                        = C.NL80211_ATTR_POWER_RULE_MAX_EIRP
+	NL80211_ATTR_PREV_BSSID                                 = C.NL80211_ATTR_PREV_BSSID
+	NL80211_ATTR_PRIVACY                                    = C.NL80211_ATTR_PRIVACY
+	NL80211_ATTR_PROBE_RESP                                 = C.NL80211_ATTR_PROBE_RESP
+	NL80211_ATTR_PROBE_RESP_OFFLOAD                         = C.NL80211_ATTR_PROBE_RESP_OFFLOAD
+	NL80211_ATTR_PROTOCOL_FEATURES                          = C.NL80211_ATTR_PROTOCOL_FEATURES
+	NL80211_ATTR_PS_STATE                                   = C.NL80211_ATTR_PS_STATE
+	NL80211_ATTR_QOS_MAP                                    = C.NL80211_ATTR_QOS_MAP
+	NL80211_ATTR_RADAR_BACKGROUND                           = C.NL80211_ATTR_RADAR_BACKGROUND
+	NL80211_ATTR_RADAR_EVENT                                = C.NL80211_ATTR_RADAR_EVENT
+	NL80211_ATTR_REASON_CODE                                = C.NL80211_ATTR_REASON_CODE
+	NL80211_ATTR_RECEIVE_MULTICAST                          = C.NL80211_ATTR_RECEIVE_MULTICAST
+	NL80211_ATTR_RECONNECT_REQUESTED                        = C.NL80211_ATTR_RECONNECT_REQUESTED
+	NL80211_ATTR_REG_ALPHA2                                 = C.NL80211_ATTR_REG_ALPHA2
+	NL80211_ATTR_REG_INDOOR                                 = C.NL80211_ATTR_REG_INDOOR
+	NL80211_ATTR_REG_INITIATOR                              = C.NL80211_ATTR_REG_INITIATOR
+	NL80211_ATTR_REG_RULE_FLAGS                             = C.NL80211_ATTR_REG_RULE_FLAGS
+	NL80211_ATTR_REG_RULES                                  = C.NL80211_ATTR_REG_RULES
+	NL80211_ATTR_REG_TYPE                                   = C.NL80211_ATTR_REG_TYPE
+	NL80211_ATTR_REKEY_DATA                                 = C.NL80211_ATTR_REKEY_DATA
+	NL80211_ATTR_REQ_IE                                     = C.NL80211_ATTR_REQ_IE
+	NL80211_ATTR_RESP_IE                                    = C.NL80211_ATTR_RESP_IE
+	NL80211_ATTR_ROAM_SUPPORT                               = C.NL80211_ATTR_ROAM_SUPPORT
+	NL80211_ATTR_RX_FRAME_TYPES                             = C.NL80211_ATTR_RX_FRAME_TYPES
+	NL80211_ATTR_RX_HW_TIMESTAMP                            = C.NL80211_ATTR_RX_HW_TIMESTAMP
+	NL80211_ATTR_RXMGMT_FLAGS                               = C.NL80211_ATTR_RXMGMT_FLAGS
+	NL80211_ATTR_RX_SIGNAL_DBM                              = C.NL80211_ATTR_RX_SIGNAL_DBM
+	NL80211_ATTR_S1G_CAPABILITY                             = C.NL80211_ATTR_S1G_CAPABILITY
+	NL80211_ATTR_S1G_CAPABILITY_MASK                        = C.NL80211_ATTR_S1G_CAPABILITY_MASK
+	NL80211_ATTR_SAE_DATA                                   = C.NL80211_ATTR_SAE_DATA
+	NL80211_ATTR_SAE_PASSWORD                               = C.NL80211_ATTR_SAE_PASSWORD
+	NL80211_ATTR_SAE_PWE                                    = C.NL80211_ATTR_SAE_PWE
+	NL80211_ATTR_SAR_SPEC                                   = C.NL80211_ATTR_SAR_SPEC
+	NL80211_ATTR_SCAN_FLAGS                                 = C.NL80211_ATTR_SCAN_FLAGS
+	NL80211_ATTR_SCAN_FREQ_KHZ                              = C.NL80211_ATTR_SCAN_FREQ_KHZ
+	NL80211_ATTR_SCAN_FREQUENCIES                           = C.NL80211_ATTR_SCAN_FREQUENCIES
+	NL80211_ATTR_SCAN_GENERATION                            = C.NL80211_ATTR_SCAN_GENERATION
+	NL80211_ATTR_SCAN_SSIDS                                 = C.NL80211_ATTR_SCAN_SSIDS
+	NL80211_ATTR_SCAN_START_TIME_TSF_BSSID                  = C.NL80211_ATTR_SCAN_START_TIME_TSF_BSSID
+	NL80211_ATTR_SCAN_START_TIME_TSF                        = C.NL80211_ATTR_SCAN_START_TIME_TSF
+	NL80211_ATTR_SCAN_SUPP_RATES                            = C.NL80211_ATTR_SCAN_SUPP_RATES
+	NL80211_ATTR_SCHED_SCAN_DELAY                           = C.NL80211_ATTR_SCHED_SCAN_DELAY
+	NL80211_ATTR_SCHED_SCAN_INTERVAL                        = C.NL80211_ATTR_SCHED_SCAN_INTERVAL
+	NL80211_ATTR_SCHED_SCAN_MATCH                           = C.NL80211_ATTR_SCHED_SCAN_MATCH
+	NL80211_ATTR_SCHED_SCAN_MATCH_SSID                      = C.NL80211_ATTR_SCHED_SCAN_MATCH_SSID
+	NL80211_ATTR_SCHED_SCAN_MAX_REQS                        = C.NL80211_ATTR_SCHED_SCAN_MAX_REQS
+	NL80211_ATTR_SCHED_SCAN_MULTI                           = C.NL80211_ATTR_SCHED_SCAN_MULTI
+	NL80211_ATTR_SCHED_SCAN_PLANS                           = C.NL80211_ATTR_SCHED_SCAN_PLANS
+	NL80211_ATTR_SCHED_SCAN_RELATIVE_RSSI                   = C.NL80211_ATTR_SCHED_SCAN_RELATIVE_RSSI
+	NL80211_ATTR_SCHED_SCAN_RSSI_ADJUST                     = C.NL80211_ATTR_SCHED_SCAN_RSSI_ADJUST
+	NL80211_ATTR_SMPS_MODE                                  = C.NL80211_ATTR_SMPS_MODE
+	NL80211_ATTR_SOCKET_OWNER                               = C.NL80211_ATTR_SOCKET_OWNER
+	NL80211_ATTR_SOFTWARE_IFTYPES                           = C.NL80211_ATTR_SOFTWARE_IFTYPES
+	NL80211_ATTR_SPLIT_WIPHY_DUMP                           = C.NL80211_ATTR_SPLIT_WIPHY_DUMP
+	NL80211_ATTR_SSID                                       = C.NL80211_ATTR_SSID
+	NL80211_ATTR_STA_AID                                    = C.NL80211_ATTR_STA_AID
+	NL80211_ATTR_STA_CAPABILITY                             = C.NL80211_ATTR_STA_CAPABILITY
+	NL80211_ATTR_STA_EXT_CAPABILITY                         = C.NL80211_ATTR_STA_EXT_CAPABILITY
+	NL80211_ATTR_STA_FLAGS2                                 = C.NL80211_ATTR_STA_FLAGS2
+	NL80211_ATTR_STA_FLAGS                                  = C.NL80211_ATTR_STA_FLAGS
+	NL80211_ATTR_STA_INFO                                   = C.NL80211_ATTR_STA_INFO
+	NL80211_ATTR_STA_LISTEN_INTERVAL                        = C.NL80211_ATTR_STA_LISTEN_INTERVAL
+	NL80211_ATTR_STA_PLINK_ACTION                           = C.NL80211_ATTR_STA_PLINK_ACTION
+	NL80211_ATTR_STA_PLINK_STATE                            = C.NL80211_ATTR_STA_PLINK_STATE
+	NL80211_ATTR_STA_SUPPORTED_CHANNELS                     = C.NL80211_ATTR_STA_SUPPORTED_CHANNELS
+	NL80211_ATTR_STA_SUPPORTED_OPER_CLASSES                 = C.NL80211_ATTR_STA_SUPPORTED_OPER_CLASSES
+	NL80211_ATTR_STA_SUPPORTED_RATES                        = C.NL80211_ATTR_STA_SUPPORTED_RATES
+	NL80211_ATTR_STA_SUPPORT_P2P_PS                         = C.NL80211_ATTR_STA_SUPPORT_P2P_PS
+	NL80211_ATTR_STATUS_CODE                                = C.NL80211_ATTR_STATUS_CODE
+	NL80211_ATTR_STA_TX_POWER                               = C.NL80211_ATTR_STA_TX_POWER
+	NL80211_ATTR_STA_TX_POWER_SETTING                       = C.NL80211_ATTR_STA_TX_POWER_SETTING
+	NL80211_ATTR_STA_VLAN                                   = C.NL80211_ATTR_STA_VLAN
+	NL80211_ATTR_STA_WME                                    = C.NL80211_ATTR_STA_WME
+	NL80211_ATTR_SUPPORT_10_MHZ                             = C.NL80211_ATTR_SUPPORT_10_MHZ
+	NL80211_ATTR_SUPPORT_5_MHZ                              = C.NL80211_ATTR_SUPPORT_5_MHZ
+	NL80211_ATTR_SUPPORT_AP_UAPSD                           = C.NL80211_ATTR_SUPPORT_AP_UAPSD
+	NL80211_ATTR_SUPPORTED_COMMANDS                         = C.NL80211_ATTR_SUPPORTED_COMMANDS
+	NL80211_ATTR_SUPPORTED_IFTYPES                          = C.NL80211_ATTR_SUPPORTED_IFTYPES
+	NL80211_ATTR_SUPPORT_IBSS_RSN                           = C.NL80211_ATTR_SUPPORT_IBSS_RSN
+	NL80211_ATTR_SUPPORT_MESH_AUTH                          = C.NL80211_ATTR_SUPPORT_MESH_AUTH
+	NL80211_ATTR_SURVEY_INFO                                = C.NL80211_ATTR_SURVEY_INFO
+	NL80211_ATTR_SURVEY_RADIO_STATS                         = C.NL80211_ATTR_SURVEY_RADIO_STATS
+	NL80211_ATTR_TD_BITMAP                                  = C.NL80211_ATTR_TD_BITMAP
+	NL80211_ATTR_TDLS_ACTION                                = C.NL80211_ATTR_TDLS_ACTION
+	NL80211_ATTR_TDLS_DIALOG_TOKEN                          = C.NL80211_ATTR_TDLS_DIALOG_TOKEN
+	NL80211_ATTR_TDLS_EXTERNAL_SETUP                        = C.NL80211_ATTR_TDLS_EXTERNAL_SETUP
+	NL80211_ATTR_TDLS_INITIATOR                             = C.NL80211_ATTR_TDLS_INITIATOR
+	NL80211_ATTR_TDLS_OPERATION                             = C.NL80211_ATTR_TDLS_OPERATION
+	NL80211_ATTR_TDLS_PEER_CAPABILITY                       = C.NL80211_ATTR_TDLS_PEER_CAPABILITY
+	NL80211_ATTR_TDLS_SUPPORT                               = C.NL80211_ATTR_TDLS_SUPPORT
+	NL80211_ATTR_TESTDATA                                   = C.NL80211_ATTR_TESTDATA
+	NL80211_ATTR_TID_CONFIG                                 = C.NL80211_ATTR_TID_CONFIG
+	NL80211_ATTR_TIMED_OUT                                  = C.NL80211_ATTR_TIMED_OUT
+	NL80211_ATTR_TIMEOUT                                    = C.NL80211_ATTR_TIMEOUT
+	NL80211_ATTR_TIMEOUT_REASON                             = C.NL80211_ATTR_TIMEOUT_REASON
+	NL80211_ATTR_TSID                                       = C.NL80211_ATTR_TSID
+	NL80211_ATTR_TWT_RESPONDER                              = C.NL80211_ATTR_TWT_RESPONDER
+	NL80211_ATTR_TX_FRAME_TYPES                             = C.NL80211_ATTR_TX_FRAME_TYPES
+	NL80211_ATTR_TX_HW_TIMESTAMP                            = C.NL80211_ATTR_TX_HW_TIMESTAMP
+	NL80211_ATTR_TX_NO_CCK_RATE                             = C.NL80211_ATTR_TX_NO_CCK_RATE
+	NL80211_ATTR_TXQ_LIMIT                                  = C.NL80211_ATTR_TXQ_LIMIT
+	NL80211_ATTR_TXQ_MEMORY_LIMIT                           = C.NL80211_ATTR_TXQ_MEMORY_LIMIT
+	NL80211_ATTR_TXQ_QUANTUM                                = C.NL80211_ATTR_TXQ_QUANTUM
+	NL80211_ATTR_TXQ_STATS                                  = C.NL80211_ATTR_TXQ_STATS
+	NL80211_ATTR_TX_RATES                                   = C.NL80211_ATTR_TX_RATES
+	NL80211_ATTR_UNSOL_BCAST_PROBE_RESP                     = C.NL80211_ATTR_UNSOL_BCAST_PROBE_RESP
+	NL80211_ATTR_UNSPEC                                     = C.NL80211_ATTR_UNSPEC
+	NL80211_ATTR_USE_MFP                                    = C.NL80211_ATTR_USE_MFP
+	NL80211_ATTR_USER_PRIO                                  = C.NL80211_ATTR_USER_PRIO
+	NL80211_ATTR_USER_REG_HINT_TYPE                         = C.NL80211_ATTR_USER_REG_HINT_TYPE
+	NL80211_ATTR_USE_RRM                                    = C.NL80211_ATTR_USE_RRM
+	NL80211_ATTR_VENDOR_DATA                                = C.NL80211_ATTR_VENDOR_DATA
+	NL80211_ATTR_VENDOR_EVENTS                              = C.NL80211_ATTR_VENDOR_EVENTS
+	NL80211_ATTR_VENDOR_ID                                  = C.NL80211_ATTR_VENDOR_ID
+	NL80211_ATTR_VENDOR_SUBCMD                              = C.NL80211_ATTR_VENDOR_SUBCMD
+	NL80211_ATTR_VHT_CAPABILITY                             = C.NL80211_ATTR_VHT_CAPABILITY
+	NL80211_ATTR_VHT_CAPABILITY_MASK                        = C.NL80211_ATTR_VHT_CAPABILITY_MASK
+	NL80211_ATTR_VLAN_ID                                    = C.NL80211_ATTR_VLAN_ID
+	NL80211_ATTR_WANT_1X_4WAY_HS                            = C.NL80211_ATTR_WANT_1X_4WAY_HS
+	NL80211_ATTR_WDEV                                       = C.NL80211_ATTR_WDEV
+	NL80211_ATTR_WIPHY_ANTENNA_AVAIL_RX                     = C.NL80211_ATTR_WIPHY_ANTENNA_AVAIL_RX
+	NL80211_ATTR_WIPHY_ANTENNA_AVAIL_TX                     = C.NL80211_ATTR_WIPHY_ANTENNA_AVAIL_TX
+	NL80211_ATTR_WIPHY_ANTENNA_RX                           = C.NL80211_ATTR_WIPHY_ANTENNA_RX
+	NL80211_ATTR_WIPHY_ANTENNA_TX                           = C.NL80211_ATTR_WIPHY_ANTENNA_TX
+	NL80211_ATTR_WIPHY_BANDS                                = C.NL80211_ATTR_WIPHY_BANDS
+	NL80211_ATTR_WIPHY_CHANNEL_TYPE                         = C.NL80211_ATTR_WIPHY_CHANNEL_TYPE
+	NL80211_ATTR_WIPHY                                      = C.NL80211_ATTR_WIPHY
+	NL80211_ATTR_WIPHY_COVERAGE_CLASS                       = C.NL80211_ATTR_WIPHY_COVERAGE_CLASS
+	NL80211_ATTR_WIPHY_DYN_ACK                              = C.NL80211_ATTR_WIPHY_DYN_ACK
+	NL80211_ATTR_WIPHY_EDMG_BW_CONFIG                       = C.NL80211_ATTR_WIPHY_EDMG_BW_CONFIG
+	NL80211_ATTR_WIPHY_EDMG_CHANNELS                        = C.NL80211_ATTR_WIPHY_EDMG_CHANNELS
+	NL80211_ATTR_WIPHY_FRAG_THRESHOLD                       = C.NL80211_ATTR_WIPHY_FRAG_THRESHOLD
+	NL80211_ATTR_WIPHY_FREQ                                 = C.NL80211_ATTR_WIPHY_FREQ
+	NL80211_ATTR_WIPHY_FREQ_HINT                            = C.NL80211_ATTR_WIPHY_FREQ_HINT
+	NL80211_ATTR_WIPHY_FREQ_OFFSET                          = C.NL80211_ATTR_WIPHY_FREQ_OFFSET
+	NL80211_ATTR_WIPHY_NAME                                 = C.NL80211_ATTR_WIPHY_NAME
+	NL80211_ATTR_WIPHY_RETRY_LONG                           = C.NL80211_ATTR_WIPHY_RETRY_LONG
+	NL80211_ATTR_WIPHY_RETRY_SHORT                          = C.NL80211_ATTR_WIPHY_RETRY_SHORT
+	NL80211_ATTR_WIPHY_RTS_THRESHOLD                        = C.NL80211_ATTR_WIPHY_RTS_THRESHOLD
+	NL80211_ATTR_WIPHY_SELF_MANAGED_REG                     = C.NL80211_ATTR_WIPHY_SELF_MANAGED_REG
+	NL80211_ATTR_WIPHY_TX_POWER_LEVEL                       = C.NL80211_ATTR_WIPHY_TX_POWER_LEVEL
+	NL80211_ATTR_WIPHY_TX_POWER_SETTING                     = C.NL80211_ATTR_WIPHY_TX_POWER_SETTING
+	NL80211_ATTR_WIPHY_TXQ_PARAMS                           = C.NL80211_ATTR_WIPHY_TXQ_PARAMS
+	NL80211_ATTR_WOWLAN_TRIGGERS                            = C.NL80211_ATTR_WOWLAN_TRIGGERS
+	NL80211_ATTR_WOWLAN_TRIGGERS_SUPPORTED                  = C.NL80211_ATTR_WOWLAN_TRIGGERS_SUPPORTED
+	NL80211_ATTR_WPA_VERSIONS                               = C.NL80211_ATTR_WPA_VERSIONS
+	NL80211_AUTHTYPE_AUTOMATIC                              = C.NL80211_AUTHTYPE_AUTOMATIC
+	NL80211_AUTHTYPE_FILS_PK                                = C.NL80211_AUTHTYPE_FILS_PK
+	NL80211_AUTHTYPE_FILS_SK                                = C.NL80211_AUTHTYPE_FILS_SK
+	NL80211_AUTHTYPE_FILS_SK_PFS                            = C.NL80211_AUTHTYPE_FILS_SK_PFS
+	NL80211_AUTHTYPE_FT                                     = C.NL80211_AUTHTYPE_FT
+	NL80211_AUTHTYPE_MAX                                    = C.NL80211_AUTHTYPE_MAX
+	NL80211_AUTHTYPE_NETWORK_EAP                            = C.NL80211_AUTHTYPE_NETWORK_EAP
+	NL80211_AUTHTYPE_OPEN_SYSTEM                            = C.NL80211_AUTHTYPE_OPEN_SYSTEM
+	NL80211_AUTHTYPE_SAE                                    = C.NL80211_AUTHTYPE_SAE
+	NL80211_AUTHTYPE_SHARED_KEY                             = C.NL80211_AUTHTYPE_SHARED_KEY
+	NL80211_BAND_2GHZ                                       = C.NL80211_BAND_2GHZ
+	NL80211_BAND_5GHZ                                       = C.NL80211_BAND_5GHZ
+	NL80211_BAND_60GHZ                                      = C.NL80211_BAND_60GHZ
+	NL80211_BAND_6GHZ                                       = C.NL80211_BAND_6GHZ
+	NL80211_BAND_ATTR_EDMG_BW_CONFIG                        = C.NL80211_BAND_ATTR_EDMG_BW_CONFIG
+	NL80211_BAND_ATTR_EDMG_CHANNELS                         = C.NL80211_BAND_ATTR_EDMG_CHANNELS
+	NL80211_BAND_ATTR_FREQS                                 = C.NL80211_BAND_ATTR_FREQS
+	NL80211_BAND_ATTR_HT_AMPDU_DENSITY                      = C.NL80211_BAND_ATTR_HT_AMPDU_DENSITY
+	NL80211_BAND_ATTR_HT_AMPDU_FACTOR                       = C.NL80211_BAND_ATTR_HT_AMPDU_FACTOR
+	NL80211_BAND_ATTR_HT_CAPA                               = C.NL80211_BAND_ATTR_HT_CAPA
+	NL80211_BAND_ATTR_HT_MCS_SET                            = C.NL80211_BAND_ATTR_HT_MCS_SET
+	NL80211_BAND_ATTR_IFTYPE_DATA                           = C.NL80211_BAND_ATTR_IFTYPE_DATA
+	NL80211_BAND_ATTR_MAX                                   = C.NL80211_BAND_ATTR_MAX
+	NL80211_BAND_ATTR_RATES                                 = C.NL80211_BAND_ATTR_RATES
+	NL80211_BAND_ATTR_VHT_CAPA                              = C.NL80211_BAND_ATTR_VHT_CAPA
+	NL80211_BAND_ATTR_VHT_MCS_SET                           = C.NL80211_BAND_ATTR_VHT_MCS_SET
+	NL80211_BAND_IFTYPE_ATTR_EHT_CAP_MAC                    = C.NL80211_BAND_IFTYPE_ATTR_EHT_CAP_MAC
+	NL80211_BAND_IFTYPE_ATTR_EHT_CAP_MCS_SET                = C.NL80211_BAND_IFTYPE_ATTR_EHT_CAP_MCS_SET
+	NL80211_BAND_IFTYPE_ATTR_EHT_CAP_PHY                    = C.NL80211_BAND_IFTYPE_ATTR_EHT_CAP_PHY
+	NL80211_BAND_IFTYPE_ATTR_EHT_CAP_PPE                    = C.NL80211_BAND_IFTYPE_ATTR_EHT_CAP_PPE
+	NL80211_BAND_IFTYPE_ATTR_HE_6GHZ_CAPA                   = C.NL80211_BAND_IFTYPE_ATTR_HE_6GHZ_CAPA
+	NL80211_BAND_IFTYPE_ATTR_HE_CAP_MAC                     = C.NL80211_BAND_IFTYPE_ATTR_HE_CAP_MAC
+	NL80211_BAND_IFTYPE_ATTR_HE_CAP_MCS_SET                 = C.NL80211_BAND_IFTYPE_ATTR_HE_CAP_MCS_SET
+	NL80211_BAND_IFTYPE_ATTR_HE_CAP_PHY                     = C.NL80211_BAND_IFTYPE_ATTR_HE_CAP_PHY
+	NL80211_BAND_IFTYPE_ATTR_HE_CAP_PPE                     = C.NL80211_BAND_IFTYPE_ATTR_HE_CAP_PPE
+	NL80211_BAND_IFTYPE_ATTR_IFTYPES                        = C.NL80211_BAND_IFTYPE_ATTR_IFTYPES
+	NL80211_BAND_IFTYPE_ATTR_MAX                            = C.NL80211_BAND_IFTYPE_ATTR_MAX
+	NL80211_BAND_IFTYPE_ATTR_VENDOR_ELEMS                   = C.NL80211_BAND_IFTYPE_ATTR_VENDOR_ELEMS
+	NL80211_BAND_LC                                         = C.NL80211_BAND_LC
+	NL80211_BAND_S1GHZ                                      = C.NL80211_BAND_S1GHZ
+	NL80211_BITRATE_ATTR_2GHZ_SHORTPREAMBLE                 = C.NL80211_BITRATE_ATTR_2GHZ_SHORTPREAMBLE
+	NL80211_BITRATE_ATTR_MAX                                = C.NL80211_BITRATE_ATTR_MAX
+	NL80211_BITRATE_ATTR_RATE                               = C.NL80211_BITRATE_ATTR_RATE
+	NL80211_BSS_BEACON_IES                                  = C.NL80211_BSS_BEACON_IES
+	NL80211_BSS_BEACON_INTERVAL                             = C.NL80211_BSS_BEACON_INTERVAL
+	NL80211_BSS_BEACON_TSF                                  = C.NL80211_BSS_BEACON_TSF
+	NL80211_BSS_BSSID                                       = C.NL80211_BSS_BSSID
+	NL80211_BSS_CAPABILITY                                  = C.NL80211_BSS_CAPABILITY
+	NL80211_BSS_CHAIN_SIGNAL                                = C.NL80211_BSS_CHAIN_SIGNAL
+	NL80211_BSS_CHAN_WIDTH_10                               = C.NL80211_BSS_CHAN_WIDTH_10
+	NL80211_BSS_CHAN_WIDTH_1                                = C.NL80211_BSS_CHAN_WIDTH_1
+	NL80211_BSS_CHAN_WIDTH_20                               = C.NL80211_BSS_CHAN_WIDTH_20
+	NL80211_BSS_CHAN_WIDTH_2                                = C.NL80211_BSS_CHAN_WIDTH_2
+	NL80211_BSS_CHAN_WIDTH_5                                = C.NL80211_BSS_CHAN_WIDTH_5
+	NL80211_BSS_CHAN_WIDTH                                  = C.NL80211_BSS_CHAN_WIDTH
+	NL80211_BSS_FREQUENCY                                   = C.NL80211_BSS_FREQUENCY
+	NL80211_BSS_FREQUENCY_OFFSET                            = C.NL80211_BSS_FREQUENCY_OFFSET
+	NL80211_BSS_INFORMATION_ELEMENTS                        = C.NL80211_BSS_INFORMATION_ELEMENTS
+	NL80211_BSS_LAST_SEEN_BOOTTIME                          = C.NL80211_BSS_LAST_SEEN_BOOTTIME
+	NL80211_BSS_MAX                                         = C.NL80211_BSS_MAX
+	NL80211_BSS_MLD_ADDR                                    = C.NL80211_BSS_MLD_ADDR
+	NL80211_BSS_MLO_LINK_ID                                 = C.NL80211_BSS_MLO_LINK_ID
+	NL80211_BSS_PAD                                         = C.NL80211_BSS_PAD
+	NL80211_BSS_PARENT_BSSID                                = C.NL80211_BSS_PARENT_BSSID
+	NL80211_BSS_PARENT_TSF                                  = C.NL80211_BSS_PARENT_TSF
+	NL80211_BSS_PRESP_DATA                                  = C.NL80211_BSS_PRESP_DATA
+	NL80211_BSS_SEEN_MS_AGO                                 = C.NL80211_BSS_SEEN_MS_AGO
+	NL80211_BSS_SELECT_ATTR_BAND_PREF                       = C.NL80211_BSS_SELECT_ATTR_BAND_PREF
+	NL80211_BSS_SELECT_ATTR_MAX                             = C.NL80211_BSS_SELECT_ATTR_MAX
+	NL80211_BSS_SELECT_ATTR_RSSI_ADJUST                     = C.NL80211_BSS_SELECT_ATTR_RSSI_ADJUST
+	NL80211_BSS_SELECT_ATTR_RSSI                            = C.NL80211_BSS_SELECT_ATTR_RSSI
+	NL80211_BSS_SIGNAL_MBM                                  = C.NL80211_BSS_SIGNAL_MBM
+	NL80211_BSS_SIGNAL_UNSPEC                               = C.NL80211_BSS_SIGNAL_UNSPEC
+	NL80211_BSS_STATUS_ASSOCIATED                           = C.NL80211_BSS_STATUS_ASSOCIATED
+	NL80211_BSS_STATUS_AUTHENTICATED                        = C.NL80211_BSS_STATUS_AUTHENTICATED
+	NL80211_BSS_STATUS                                      = C.NL80211_BSS_STATUS
+	NL80211_BSS_STATUS_IBSS_JOINED                          = C.NL80211_BSS_STATUS_IBSS_JOINED
+	NL80211_BSS_TSF                                         = C.NL80211_BSS_TSF
+	NL80211_CHAN_HT20                                       = C.NL80211_CHAN_HT20
+	NL80211_CHAN_HT40MINUS                                  = C.NL80211_CHAN_HT40MINUS
+	NL80211_CHAN_HT40PLUS                                   = C.NL80211_CHAN_HT40PLUS
+	NL80211_CHAN_NO_HT                                      = C.NL80211_CHAN_NO_HT
+	NL80211_CHAN_WIDTH_10                                   = C.NL80211_CHAN_WIDTH_10
+	NL80211_CHAN_WIDTH_160                                  = C.NL80211_CHAN_WIDTH_160
+	NL80211_CHAN_WIDTH_16                                   = C.NL80211_CHAN_WIDTH_16
+	NL80211_CHAN_WIDTH_1                                    = C.NL80211_CHAN_WIDTH_1
+	NL80211_CHAN_WIDTH_20                                   = C.NL80211_CHAN_WIDTH_20
+	NL80211_CHAN_WIDTH_20_NOHT                              = C.NL80211_CHAN_WIDTH_20_NOHT
+	NL80211_CHAN_WIDTH_2                                    = C.NL80211_CHAN_WIDTH_2
+	NL80211_CHAN_WIDTH_320                                  = C.NL80211_CHAN_WIDTH_320
+	NL80211_CHAN_WIDTH_40                                   = C.NL80211_CHAN_WIDTH_40
+	NL80211_CHAN_WIDTH_4                                    = C.NL80211_CHAN_WIDTH_4
+	NL80211_CHAN_WIDTH_5                                    = C.NL80211_CHAN_WIDTH_5
+	NL80211_CHAN_WIDTH_80                                   = C.NL80211_CHAN_WIDTH_80
+	NL80211_CHAN_WIDTH_80P80                                = C.NL80211_CHAN_WIDTH_80P80
+	NL80211_CHAN_WIDTH_8                                    = C.NL80211_CHAN_WIDTH_8
+	NL80211_CMD_ABORT_SCAN                                  = C.NL80211_CMD_ABORT_SCAN
+	NL80211_CMD_ACTION                                      = C.NL80211_CMD_ACTION
+	NL80211_CMD_ACTION_TX_STATUS                            = C.NL80211_CMD_ACTION_TX_STATUS
+	NL80211_CMD_ADD_LINK                                    = C.NL80211_CMD_ADD_LINK
+	NL80211_CMD_ADD_LINK_STA                                = C.NL80211_CMD_ADD_LINK_STA
+	NL80211_CMD_ADD_NAN_FUNCTION                            = C.NL80211_CMD_ADD_NAN_FUNCTION
+	NL80211_CMD_ADD_TX_TS                                   = C.NL80211_CMD_ADD_TX_TS
+	NL80211_CMD_ASSOC_COMEBACK                              = C.NL80211_CMD_ASSOC_COMEBACK
+	NL80211_CMD_ASSOCIATE                                   = C.NL80211_CMD_ASSOCIATE
+	NL80211_CMD_AUTHENTICATE                                = C.NL80211_CMD_AUTHENTICATE
+	NL80211_CMD_CANCEL_REMAIN_ON_CHANNEL                    = C.NL80211_CMD_CANCEL_REMAIN_ON_CHANNEL
+	NL80211_CMD_CHANGE_NAN_CONFIG                           = C.NL80211_CMD_CHANGE_NAN_CONFIG
+	NL80211_CMD_CHANNEL_SWITCH                              = C.NL80211_CMD_CHANNEL_SWITCH
+	NL80211_CMD_CH_SWITCH_NOTIFY                            = C.NL80211_CMD_CH_SWITCH_NOTIFY
+	NL80211_CMD_CH_SWITCH_STARTED_NOTIFY                    = C.NL80211_CMD_CH_SWITCH_STARTED_NOTIFY
+	NL80211_CMD_COLOR_CHANGE_ABORTED                        = C.NL80211_CMD_COLOR_CHANGE_ABORTED
+	NL80211_CMD_COLOR_CHANGE_COMPLETED                      = C.NL80211_CMD_COLOR_CHANGE_COMPLETED
+	NL80211_CMD_COLOR_CHANGE_REQUEST                        = C.NL80211_CMD_COLOR_CHANGE_REQUEST
+	NL80211_CMD_COLOR_CHANGE_STARTED                        = C.NL80211_CMD_COLOR_CHANGE_STARTED
+	NL80211_CMD_CONNECT                                     = C.NL80211_CMD_CONNECT
+	NL80211_CMD_CONN_FAILED                                 = C.NL80211_CMD_CONN_FAILED
+	NL80211_CMD_CONTROL_PORT_FRAME                          = C.NL80211_CMD_CONTROL_PORT_FRAME
+	NL80211_CMD_CONTROL_PORT_FRAME_TX_STATUS                = C.NL80211_CMD_CONTROL_PORT_FRAME_TX_STATUS
+	NL80211_CMD_CRIT_PROTOCOL_START                         = C.NL80211_CMD_CRIT_PROTOCOL_START
+	NL80211_CMD_CRIT_PROTOCOL_STOP                          = C.NL80211_CMD_CRIT_PROTOCOL_STOP
+	NL80211_CMD_DEAUTHENTICATE                              = C.NL80211_CMD_DEAUTHENTICATE
+	NL80211_CMD_DEL_BEACON                                  = C.NL80211_CMD_DEL_BEACON
+	NL80211_CMD_DEL_INTERFACE                               = C.NL80211_CMD_DEL_INTERFACE
+	NL80211_CMD_DEL_KEY                                     = C.NL80211_CMD_DEL_KEY
+	NL80211_CMD_DEL_MPATH                                   = C.NL80211_CMD_DEL_MPATH
+	NL80211_CMD_DEL_NAN_FUNCTION                            = C.NL80211_CMD_DEL_NAN_FUNCTION
+	NL80211_CMD_DEL_PMK                                     = C.NL80211_CMD_DEL_PMK
+	NL80211_CMD_DEL_PMKSA                                   = C.NL80211_CMD_DEL_PMKSA
+	NL80211_CMD_DEL_STATION                                 = C.NL80211_CMD_DEL_STATION
+	NL80211_CMD_DEL_TX_TS                                   = C.NL80211_CMD_DEL_TX_TS
+	NL80211_CMD_DEL_WIPHY                                   = C.NL80211_CMD_DEL_WIPHY
+	NL80211_CMD_DISASSOCIATE                                = C.NL80211_CMD_DISASSOCIATE
+	NL80211_CMD_DISCONNECT                                  = C.NL80211_CMD_DISCONNECT
+	NL80211_CMD_EXTERNAL_AUTH                               = C.NL80211_CMD_EXTERNAL_AUTH
+	NL80211_CMD_FLUSH_PMKSA                                 = C.NL80211_CMD_FLUSH_PMKSA
+	NL80211_CMD_FRAME                                       = C.NL80211_CMD_FRAME
+	NL80211_CMD_FRAME_TX_STATUS                             = C.NL80211_CMD_FRAME_TX_STATUS
+	NL80211_CMD_FRAME_WAIT_CANCEL                           = C.NL80211_CMD_FRAME_WAIT_CANCEL
+	NL80211_CMD_FT_EVENT                                    = C.NL80211_CMD_FT_EVENT
+	NL80211_CMD_GET_BEACON                                  = C.NL80211_CMD_GET_BEACON
+	NL80211_CMD_GET_COALESCE                                = C.NL80211_CMD_GET_COALESCE
+	NL80211_CMD_GET_FTM_RESPONDER_STATS                     = C.NL80211_CMD_GET_FTM_RESPONDER_STATS
+	NL80211_CMD_GET_INTERFACE                               = C.NL80211_CMD_GET_INTERFACE
+	NL80211_CMD_GET_KEY                                     = C.NL80211_CMD_GET_KEY
+	NL80211_CMD_GET_MESH_CONFIG                             = C.NL80211_CMD_GET_MESH_CONFIG
+	NL80211_CMD_GET_MESH_PARAMS                             = C.NL80211_CMD_GET_MESH_PARAMS
+	NL80211_CMD_GET_MPATH                                   = C.NL80211_CMD_GET_MPATH
+	NL80211_CMD_GET_MPP                                     = C.NL80211_CMD_GET_MPP
+	NL80211_CMD_GET_POWER_SAVE                              = C.NL80211_CMD_GET_POWER_SAVE
+	NL80211_CMD_GET_PROTOCOL_FEATURES                       = C.NL80211_CMD_GET_PROTOCOL_FEATURES
+	NL80211_CMD_GET_REG                                     = C.NL80211_CMD_GET_REG
+	NL80211_CMD_GET_SCAN                                    = C.NL80211_CMD_GET_SCAN
+	NL80211_CMD_GET_STATION                                 = C.NL80211_CMD_GET_STATION
+	NL80211_CMD_GET_SURVEY                                  = C.NL80211_CMD_GET_SURVEY
+	NL80211_CMD_GET_WIPHY                                   = C.NL80211_CMD_GET_WIPHY
+	NL80211_CMD_GET_WOWLAN                                  = C.NL80211_CMD_GET_WOWLAN
+	NL80211_CMD_JOIN_IBSS                                   = C.NL80211_CMD_JOIN_IBSS
+	NL80211_CMD_JOIN_MESH                                   = C.NL80211_CMD_JOIN_MESH
+	NL80211_CMD_JOIN_OCB                                    = C.NL80211_CMD_JOIN_OCB
+	NL80211_CMD_LEAVE_IBSS                                  = C.NL80211_CMD_LEAVE_IBSS
+	NL80211_CMD_LEAVE_MESH                                  = C.NL80211_CMD_LEAVE_MESH
+	NL80211_CMD_LEAVE_OCB                                   = C.NL80211_CMD_LEAVE_OCB
+	NL80211_CMD_MAX                                         = C.NL80211_CMD_MAX
+	NL80211_CMD_MICHAEL_MIC_FAILURE                         = C.NL80211_CMD_MICHAEL_MIC_FAILURE
+	NL80211_CMD_MODIFY_LINK_STA                             = C.NL80211_CMD_MODIFY_LINK_STA
+	NL80211_CMD_NAN_MATCH                                   = C.NL80211_CMD_NAN_MATCH
+	NL80211_CMD_NEW_BEACON                                  = C.NL80211_CMD_NEW_BEACON
+	NL80211_CMD_NEW_INTERFACE                               = C.NL80211_CMD_NEW_INTERFACE
+	NL80211_CMD_NEW_KEY                                     = C.NL80211_CMD_NEW_KEY
+	NL80211_CMD_NEW_MPATH                                   = C.NL80211_CMD_NEW_MPATH
+	NL80211_CMD_NEW_PEER_CANDIDATE                          = C.NL80211_CMD_NEW_PEER_CANDIDATE
+	NL80211_CMD_NEW_SCAN_RESULTS                            = C.NL80211_CMD_NEW_SCAN_RESULTS
+	NL80211_CMD_NEW_STATION                                 = C.NL80211_CMD_NEW_STATION
+	NL80211_CMD_NEW_SURVEY_RESULTS                          = C.NL80211_CMD_NEW_SURVEY_RESULTS
+	NL80211_CMD_NEW_WIPHY                                   = C.NL80211_CMD_NEW_WIPHY
+	NL80211_CMD_NOTIFY_CQM                                  = C.NL80211_CMD_NOTIFY_CQM
+	NL80211_CMD_NOTIFY_RADAR                                = C.NL80211_CMD_NOTIFY_RADAR
+	NL80211_CMD_OBSS_COLOR_COLLISION                        = C.NL80211_CMD_OBSS_COLOR_COLLISION
+	NL80211_CMD_PEER_MEASUREMENT_COMPLETE                   = C.NL80211_CMD_PEER_MEASUREMENT_COMPLETE
+	NL80211_CMD_PEER_MEASUREMENT_RESULT                     = C.NL80211_CMD_PEER_MEASUREMENT_RESULT
+	NL80211_CMD_PEER_MEASUREMENT_START                      = C.NL80211_CMD_PEER_MEASUREMENT_START
+	NL80211_CMD_PMKSA_CANDIDATE                             = C.NL80211_CMD_PMKSA_CANDIDATE
+	NL80211_CMD_PORT_AUTHORIZED                             = C.NL80211_CMD_PORT_AUTHORIZED
+	NL80211_CMD_PROBE_CLIENT                                = C.NL80211_CMD_PROBE_CLIENT
+	NL80211_CMD_PROBE_MESH_LINK                             = C.NL80211_CMD_PROBE_MESH_LINK
+	NL80211_CMD_RADAR_DETECT                                = C.NL80211_CMD_RADAR_DETECT
+	NL80211_CMD_REG_BEACON_HINT                             = C.NL80211_CMD_REG_BEACON_HINT
+	NL80211_CMD_REG_CHANGE                                  = C.NL80211_CMD_REG_CHANGE
+	NL80211_CMD_REGISTER_ACTION                             = C.NL80211_CMD_REGISTER_ACTION
+	NL80211_CMD_REGISTER_BEACONS                            = C.NL80211_CMD_REGISTER_BEACONS
+	NL80211_CMD_REGISTER_FRAME                              = C.NL80211_CMD_REGISTER_FRAME
+	NL80211_CMD_RELOAD_REGDB                                = C.NL80211_CMD_RELOAD_REGDB
+	NL80211_CMD_REMAIN_ON_CHANNEL                           = C.NL80211_CMD_REMAIN_ON_CHANNEL
+	NL80211_CMD_REMOVE_LINK                                 = C.NL80211_CMD_REMOVE_LINK
+	NL80211_CMD_REMOVE_LINK_STA                             = C.NL80211_CMD_REMOVE_LINK_STA
+	NL80211_CMD_REQ_SET_REG                                 = C.NL80211_CMD_REQ_SET_REG
+	NL80211_CMD_ROAM                                        = C.NL80211_CMD_ROAM
+	NL80211_CMD_SCAN_ABORTED                                = C.NL80211_CMD_SCAN_ABORTED
+	NL80211_CMD_SCHED_SCAN_RESULTS                          = C.NL80211_CMD_SCHED_SCAN_RESULTS
+	NL80211_CMD_SCHED_SCAN_STOPPED                          = C.NL80211_CMD_SCHED_SCAN_STOPPED
+	NL80211_CMD_SET_BEACON                                  = C.NL80211_CMD_SET_BEACON
+	NL80211_CMD_SET_BSS                                     = C.NL80211_CMD_SET_BSS
+	NL80211_CMD_SET_CHANNEL                                 = C.NL80211_CMD_SET_CHANNEL
+	NL80211_CMD_SET_COALESCE                                = C.NL80211_CMD_SET_COALESCE
+	NL80211_CMD_SET_CQM                                     = C.NL80211_CMD_SET_CQM
+	NL80211_CMD_SET_FILS_AAD                                = C.NL80211_CMD_SET_FILS_AAD
+	NL80211_CMD_SET_INTERFACE                               = C.NL80211_CMD_SET_INTERFACE
+	NL80211_CMD_SET_KEY                                     = C.NL80211_CMD_SET_KEY
+	NL80211_CMD_SET_MAC_ACL                                 = C.NL80211_CMD_SET_MAC_ACL
+	NL80211_CMD_SET_MCAST_RATE                              = C.NL80211_CMD_SET_MCAST_RATE
+	NL80211_CMD_SET_MESH_CONFIG                             = C.NL80211_CMD_SET_MESH_CONFIG
+	NL80211_CMD_SET_MESH_PARAMS                             = C.NL80211_CMD_SET_MESH_PARAMS
+	NL80211_CMD_SET_MGMT_EXTRA_IE                           = C.NL80211_CMD_SET_MGMT_EXTRA_IE
+	NL80211_CMD_SET_MPATH                                   = C.NL80211_CMD_SET_MPATH
+	NL80211_CMD_SET_MULTICAST_TO_UNICAST                    = C.NL80211_CMD_SET_MULTICAST_TO_UNICAST
+	NL80211_CMD_SET_NOACK_MAP                               = C.NL80211_CMD_SET_NOACK_MAP
+	NL80211_CMD_SET_PMK                                     = C.NL80211_CMD_SET_PMK
+	NL80211_CMD_SET_PMKSA                                   = C.NL80211_CMD_SET_PMKSA
+	NL80211_CMD_SET_POWER_SAVE                              = C.NL80211_CMD_SET_POWER_SAVE
+	NL80211_CMD_SET_QOS_MAP                                 = C.NL80211_CMD_SET_QOS_MAP
+	NL80211_CMD_SET_REG                                     = C.NL80211_CMD_SET_REG
+	NL80211_CMD_SET_REKEY_OFFLOAD                           = C.NL80211_CMD_SET_REKEY_OFFLOAD
+	NL80211_CMD_SET_SAR_SPECS                               = C.NL80211_CMD_SET_SAR_SPECS
+	NL80211_CMD_SET_STATION                                 = C.NL80211_CMD_SET_STATION
+	NL80211_CMD_SET_TID_CONFIG                              = C.NL80211_CMD_SET_TID_CONFIG
+	NL80211_CMD_SET_TX_BITRATE_MASK                         = C.NL80211_CMD_SET_TX_BITRATE_MASK
+	NL80211_CMD_SET_WDS_PEER                                = C.NL80211_CMD_SET_WDS_PEER
+	NL80211_CMD_SET_WIPHY                                   = C.NL80211_CMD_SET_WIPHY
+	NL80211_CMD_SET_WIPHY_NETNS                             = C.NL80211_CMD_SET_WIPHY_NETNS
+	NL80211_CMD_SET_WOWLAN                                  = C.NL80211_CMD_SET_WOWLAN
+	NL80211_CMD_STA_OPMODE_CHANGED                          = C.NL80211_CMD_STA_OPMODE_CHANGED
+	NL80211_CMD_START_AP                                    = C.NL80211_CMD_START_AP
+	NL80211_CMD_START_NAN                                   = C.NL80211_CMD_START_NAN
+	NL80211_CMD_START_P2P_DEVICE                            = C.NL80211_CMD_START_P2P_DEVICE
+	NL80211_CMD_START_SCHED_SCAN                            = C.NL80211_CMD_START_SCHED_SCAN
+	NL80211_CMD_STOP_AP                                     = C.NL80211_CMD_STOP_AP
+	NL80211_CMD_STOP_NAN                                    = C.NL80211_CMD_STOP_NAN
+	NL80211_CMD_STOP_P2P_DEVICE                             = C.NL80211_CMD_STOP_P2P_DEVICE
+	NL80211_CMD_STOP_SCHED_SCAN                             = C.NL80211_CMD_STOP_SCHED_SCAN
+	NL80211_CMD_TDLS_CANCEL_CHANNEL_SWITCH                  = C.NL80211_CMD_TDLS_CANCEL_CHANNEL_SWITCH
+	NL80211_CMD_TDLS_CHANNEL_SWITCH                         = C.NL80211_CMD_TDLS_CHANNEL_SWITCH
+	NL80211_CMD_TDLS_MGMT                                   = C.NL80211_CMD_TDLS_MGMT
+	NL80211_CMD_TDLS_OPER                                   = C.NL80211_CMD_TDLS_OPER
+	NL80211_CMD_TESTMODE                                    = C.NL80211_CMD_TESTMODE
+	NL80211_CMD_TRIGGER_SCAN                                = C.NL80211_CMD_TRIGGER_SCAN
+	NL80211_CMD_UNEXPECTED_4ADDR_FRAME                      = C.NL80211_CMD_UNEXPECTED_4ADDR_FRAME
+	NL80211_CMD_UNEXPECTED_FRAME                            = C.NL80211_CMD_UNEXPECTED_FRAME
+	NL80211_CMD_UNPROT_BEACON                               = C.NL80211_CMD_UNPROT_BEACON
+	NL80211_CMD_UNPROT_DEAUTHENTICATE                       = C.NL80211_CMD_UNPROT_DEAUTHENTICATE
+	NL80211_CMD_UNPROT_DISASSOCIATE                         = C.NL80211_CMD_UNPROT_DISASSOCIATE
+	NL80211_CMD_UNSPEC                                      = C.NL80211_CMD_UNSPEC
+	NL80211_CMD_UPDATE_CONNECT_PARAMS                       = C.NL80211_CMD_UPDATE_CONNECT_PARAMS
+	NL80211_CMD_UPDATE_FT_IES                               = C.NL80211_CMD_UPDATE_FT_IES
+	NL80211_CMD_UPDATE_OWE_INFO                             = C.NL80211_CMD_UPDATE_OWE_INFO
+	NL80211_CMD_VENDOR                                      = C.NL80211_CMD_VENDOR
+	NL80211_CMD_WIPHY_REG_CHANGE                            = C.NL80211_CMD_WIPHY_REG_CHANGE
+	NL80211_COALESCE_CONDITION_MATCH                        = C.NL80211_COALESCE_CONDITION_MATCH
+	NL80211_COALESCE_CONDITION_NO_MATCH                     = C.NL80211_COALESCE_CONDITION_NO_MATCH
+	NL80211_CONN_FAIL_BLOCKED_CLIENT                        = C.NL80211_CONN_FAIL_BLOCKED_CLIENT
+	NL80211_CONN_FAIL_MAX_CLIENTS                           = C.NL80211_CONN_FAIL_MAX_CLIENTS
+	NL80211_CQM_RSSI_BEACON_LOSS_EVENT                      = C.NL80211_CQM_RSSI_BEACON_LOSS_EVENT
+	NL80211_CQM_RSSI_THRESHOLD_EVENT_HIGH                   = C.NL80211_CQM_RSSI_THRESHOLD_EVENT_HIGH
+	NL80211_CQM_RSSI_THRESHOLD_EVENT_LOW                    = C.NL80211_CQM_RSSI_THRESHOLD_EVENT_LOW
+	NL80211_CQM_TXE_MAX_INTVL                               = C.NL80211_CQM_TXE_MAX_INTVL
+	NL80211_CRIT_PROTO_APIPA                                = C.NL80211_CRIT_PROTO_APIPA
+	NL80211_CRIT_PROTO_DHCP                                 = C.NL80211_CRIT_PROTO_DHCP
+	NL80211_CRIT_PROTO_EAPOL                                = C.NL80211_CRIT_PROTO_EAPOL
+	NL80211_CRIT_PROTO_MAX_DURATION                         = C.NL80211_CRIT_PROTO_MAX_DURATION
+	NL80211_CRIT_PROTO_UNSPEC                               = C.NL80211_CRIT_PROTO_UNSPEC
+	NL80211_DFS_AVAILABLE                                   = C.NL80211_DFS_AVAILABLE
+	NL80211_DFS_ETSI                                        = C.NL80211_DFS_ETSI
+	NL80211_DFS_FCC                                         = C.NL80211_DFS_FCC
+	NL80211_DFS_JP                                          = C.NL80211_DFS_JP
+	NL80211_DFS_UNAVAILABLE                                 = C.NL80211_DFS_UNAVAILABLE
+	NL80211_DFS_UNSET                                       = C.NL80211_DFS_UNSET
+	NL80211_DFS_USABLE                                      = C.NL80211_DFS_USABLE
+	NL80211_EDMG_BW_CONFIG_MAX                              = C.NL80211_EDMG_BW_CONFIG_MAX
+	NL80211_EDMG_BW_CONFIG_MIN                              = C.NL80211_EDMG_BW_CONFIG_MIN
+	NL80211_EDMG_CHANNELS_MAX                               = C.NL80211_EDMG_CHANNELS_MAX
+	NL80211_EDMG_CHANNELS_MIN                               = C.NL80211_EDMG_CHANNELS_MIN
+	NL80211_EHT_MAX_CAPABILITY_LEN                          = C.NL80211_EHT_MAX_CAPABILITY_LEN
+	NL80211_EHT_MIN_CAPABILITY_LEN                          = C.NL80211_EHT_MIN_CAPABILITY_LEN
+	NL80211_EXTERNAL_AUTH_ABORT                             = C.NL80211_EXTERNAL_AUTH_ABORT
+	NL80211_EXTERNAL_AUTH_START                             = C.NL80211_EXTERNAL_AUTH_START
+	NL80211_EXT_FEATURE_4WAY_HANDSHAKE_AP_PSK               = C.NL80211_EXT_FEATURE_4WAY_HANDSHAKE_AP_PSK
+	NL80211_EXT_FEATURE_4WAY_HANDSHAKE_STA_1X               = C.NL80211_EXT_FEATURE_4WAY_HANDSHAKE_STA_1X
+	NL80211_EXT_FEATURE_4WAY_HANDSHAKE_STA_PSK              = C.NL80211_EXT_FEATURE_4WAY_HANDSHAKE_STA_PSK
+	NL80211_EXT_FEATURE_ACCEPT_BCAST_PROBE_RESP             = C.NL80211_EXT_FEATURE_ACCEPT_BCAST_PROBE_RESP
+	NL80211_EXT_FEATURE_ACK_SIGNAL_SUPPORT                  = C.NL80211_EXT_FEATURE_ACK_SIGNAL_SUPPORT
+	NL80211_EXT_FEATURE_AIRTIME_FAIRNESS                    = C.NL80211_EXT_FEATURE_AIRTIME_FAIRNESS
+	NL80211_EXT_FEATURE_AP_PMKSA_CACHING                    = C.NL80211_EXT_FEATURE_AP_PMKSA_CACHING
+	NL80211_EXT_FEATURE_AQL                                 = C.NL80211_EXT_FEATURE_AQL
+	NL80211_EXT_FEATURE_BEACON_PROTECTION_CLIENT            = C.NL80211_EXT_FEATURE_BEACON_PROTECTION_CLIENT
+	NL80211_EXT_FEATURE_BEACON_PROTECTION                   = C.NL80211_EXT_FEATURE_BEACON_PROTECTION
+	NL80211_EXT_FEATURE_BEACON_RATE_HE                      = C.NL80211_EXT_FEATURE_BEACON_RATE_HE
+	NL80211_EXT_FEATURE_BEACON_RATE_HT                      = C.NL80211_EXT_FEATURE_BEACON_RATE_HT
+	NL80211_EXT_FEATURE_BEACON_RATE_LEGACY                  = C.NL80211_EXT_FEATURE_BEACON_RATE_LEGACY
+	NL80211_EXT_FEATURE_BEACON_RATE_VHT                     = C.NL80211_EXT_FEATURE_BEACON_RATE_VHT
+	NL80211_EXT_FEATURE_BSS_COLOR                           = C.NL80211_EXT_FEATURE_BSS_COLOR
+	NL80211_EXT_FEATURE_BSS_PARENT_TSF                      = C.NL80211_EXT_FEATURE_BSS_PARENT_TSF
+	NL80211_EXT_FEATURE_CAN_REPLACE_PTK0                    = C.NL80211_EXT_FEATURE_CAN_REPLACE_PTK0
+	NL80211_EXT_FEATURE_CONTROL_PORT_NO_PREAUTH             = C.NL80211_EXT_FEATURE_CONTROL_PORT_NO_PREAUTH
+	NL80211_EXT_FEATURE_CONTROL_PORT_OVER_NL80211           = C.NL80211_EXT_FEATURE_CONTROL_PORT_OVER_NL80211
+	NL80211_EXT_FEATURE_CONTROL_PORT_OVER_NL80211_TX_STATUS = C.NL80211_EXT_FEATURE_CONTROL_PORT_OVER_NL80211_TX_STATUS
+	NL80211_EXT_FEATURE_CQM_RSSI_LIST                       = C.NL80211_EXT_FEATURE_CQM_RSSI_LIST
+	NL80211_EXT_FEATURE_DATA_ACK_SIGNAL_SUPPORT             = C.NL80211_EXT_FEATURE_DATA_ACK_SIGNAL_SUPPORT
+	NL80211_EXT_FEATURE_DEL_IBSS_STA                        = C.NL80211_EXT_FEATURE_DEL_IBSS_STA
+	NL80211_EXT_FEATURE_DFS_OFFLOAD                         = C.NL80211_EXT_FEATURE_DFS_OFFLOAD
+	NL80211_EXT_FEATURE_ENABLE_FTM_RESPONDER                = C.NL80211_EXT_FEATURE_ENABLE_FTM_RESPONDER
+	NL80211_EXT_FEATURE_EXT_KEY_ID                          = C.NL80211_EXT_FEATURE_EXT_KEY_ID
+	NL80211_EXT_FEATURE_FILS_CRYPTO_OFFLOAD                 = C.NL80211_EXT_FEATURE_FILS_CRYPTO_OFFLOAD
+	NL80211_EXT_FEATURE_FILS_DISCOVERY                      = C.NL80211_EXT_FEATURE_FILS_DISCOVERY
+	NL80211_EXT_FEATURE_FILS_MAX_CHANNEL_TIME               = C.NL80211_EXT_FEATURE_FILS_MAX_CHANNEL_TIME
+	NL80211_EXT_FEATURE_FILS_SK_OFFLOAD                     = C.NL80211_EXT_FEATURE_FILS_SK_OFFLOAD
+	NL80211_EXT_FEATURE_FILS_STA                            = C.NL80211_EXT_FEATURE_FILS_STA
+	NL80211_EXT_FEATURE_HIGH_ACCURACY_SCAN                  = C.NL80211_EXT_FEATURE_HIGH_ACCURACY_SCAN
+	NL80211_EXT_FEATURE_LOW_POWER_SCAN                      = C.NL80211_EXT_FEATURE_LOW_POWER_SCAN
+	NL80211_EXT_FEATURE_LOW_SPAN_SCAN                       = C.NL80211_EXT_FEATURE_LOW_SPAN_SCAN
+	NL80211_EXT_FEATURE_MFP_OPTIONAL                        = C.NL80211_EXT_FEATURE_MFP_OPTIONAL
+	NL80211_EXT_FEATURE_MGMT_TX_RANDOM_TA                   = C.NL80211_EXT_FEATURE_MGMT_TX_RANDOM_TA
+	NL80211_EXT_FEATURE_MGMT_TX_RANDOM_TA_CONNECTED         = C.NL80211_EXT_FEATURE_MGMT_TX_RANDOM_TA_CONNECTED
+	NL80211_EXT_FEATURE_MULTICAST_REGISTRATIONS             = C.NL80211_EXT_FEATURE_MULTICAST_REGISTRATIONS
+	NL80211_EXT_FEATURE_MU_MIMO_AIR_SNIFFER                 = C.NL80211_EXT_FEATURE_MU_MIMO_AIR_SNIFFER
+	NL80211_EXT_FEATURE_OCE_PROBE_REQ_DEFERRAL_SUPPRESSION  = C.NL80211_EXT_FEATURE_OCE_PROBE_REQ_DEFERRAL_SUPPRESSION
+	NL80211_EXT_FEATURE_OCE_PROBE_REQ_HIGH_TX_RATE          = C.NL80211_EXT_FEATURE_OCE_PROBE_REQ_HIGH_TX_RATE
+	NL80211_EXT_FEATURE_OPERATING_CHANNEL_VALIDATION        = C.NL80211_EXT_FEATURE_OPERATING_CHANNEL_VALIDATION
+	NL80211_EXT_FEATURE_POWERED_ADDR_CHANGE                 = C.NL80211_EXT_FEATURE_POWERED_ADDR_CHANGE
+	NL80211_EXT_FEATURE_PROTECTED_TWT                       = C.NL80211_EXT_FEATURE_PROTECTED_TWT
+	NL80211_EXT_FEATURE_PROT_RANGE_NEGO_AND_MEASURE         = C.NL80211_EXT_FEATURE_PROT_RANGE_NEGO_AND_MEASURE
+	NL80211_EXT_FEATURE_RADAR_BACKGROUND                    = C.NL80211_EXT_FEATURE_RADAR_BACKGROUND
+	NL80211_EXT_FEATURE_RRM                                 = C.NL80211_EXT_FEATURE_RRM
+	NL80211_EXT_FEATURE_SAE_OFFLOAD_AP                      = C.NL80211_EXT_FEATURE_SAE_OFFLOAD_AP
+	NL80211_EXT_FEATURE_SAE_OFFLOAD                         = C.NL80211_EXT_FEATURE_SAE_OFFLOAD
+	NL80211_EXT_FEATURE_SCAN_FREQ_KHZ                       = C.NL80211_EXT_FEATURE_SCAN_FREQ_KHZ
+	NL80211_EXT_FEATURE_SCAN_MIN_PREQ_CONTENT               = C.NL80211_EXT_FEATURE_SCAN_MIN_PREQ_CONTENT
+	NL80211_EXT_FEATURE_SCAN_RANDOM_SN                      = C.NL80211_EXT_FEATURE_SCAN_RANDOM_SN
+	NL80211_EXT_FEATURE_SCAN_START_TIME                     = C.NL80211_EXT_FEATURE_SCAN_START_TIME
+	NL80211_EXT_FEATURE_SCHED_SCAN_BAND_SPECIFIC_RSSI_THOLD = C.NL80211_EXT_FEATURE_SCHED_SCAN_BAND_SPECIFIC_RSSI_THOLD
+	NL80211_EXT_FEATURE_SCHED_SCAN_RELATIVE_RSSI            = C.NL80211_EXT_FEATURE_SCHED_SCAN_RELATIVE_RSSI
+	NL80211_EXT_FEATURE_SECURE_LTF                          = C.NL80211_EXT_FEATURE_SECURE_LTF
+	NL80211_EXT_FEATURE_SECURE_RTT                          = C.NL80211_EXT_FEATURE_SECURE_RTT
+	NL80211_EXT_FEATURE_SET_SCAN_DWELL                      = C.NL80211_EXT_FEATURE_SET_SCAN_DWELL
+	NL80211_EXT_FEATURE_STA_TX_PWR                          = C.NL80211_EXT_FEATURE_STA_TX_PWR
+	NL80211_EXT_FEATURE_TXQS                                = C.NL80211_EXT_FEATURE_TXQS
+	NL80211_EXT_FEATURE_UNSOL_BCAST_PROBE_RESP              = C.NL80211_EXT_FEATURE_UNSOL_BCAST_PROBE_RESP
+	NL80211_EXT_FEATURE_VHT_IBSS                            = C.NL80211_EXT_FEATURE_VHT_IBSS
+	NL80211_EXT_FEATURE_VLAN_OFFLOAD                        = C.NL80211_EXT_FEATURE_VLAN_OFFLOAD
+	NL80211_FEATURE_ACKTO_ESTIMATION                        = C.NL80211_FEATURE_ACKTO_ESTIMATION
+	NL80211_FEATURE_ACTIVE_MONITOR                          = C.NL80211_FEATURE_ACTIVE_MONITOR
+	NL80211_FEATURE_ADVERTISE_CHAN_LIMITS                   = C.NL80211_FEATURE_ADVERTISE_CHAN_LIMITS
+	NL80211_FEATURE_AP_MODE_CHAN_WIDTH_CHANGE               = C.NL80211_FEATURE_AP_MODE_CHAN_WIDTH_CHANGE
+	NL80211_FEATURE_AP_SCAN                                 = C.NL80211_FEATURE_AP_SCAN
+	NL80211_FEATURE_CELL_BASE_REG_HINTS                     = C.NL80211_FEATURE_CELL_BASE_REG_HINTS
+	NL80211_FEATURE_DS_PARAM_SET_IE_IN_PROBES               = C.NL80211_FEATURE_DS_PARAM_SET_IE_IN_PROBES
+	NL80211_FEATURE_DYNAMIC_SMPS                            = C.NL80211_FEATURE_DYNAMIC_SMPS
+	NL80211_FEATURE_FULL_AP_CLIENT_STATE                    = C.NL80211_FEATURE_FULL_AP_CLIENT_STATE
+	NL80211_FEATURE_HT_IBSS                                 = C.NL80211_FEATURE_HT_IBSS
+	NL80211_FEATURE_INACTIVITY_TIMER                        = C.NL80211_FEATURE_INACTIVITY_TIMER
+	NL80211_FEATURE_LOW_PRIORITY_SCAN                       = C.NL80211_FEATURE_LOW_PRIORITY_SCAN
+	NL80211_FEATURE_MAC_ON_CREATE                           = C.NL80211_FEATURE_MAC_ON_CREATE
+	NL80211_FEATURE_ND_RANDOM_MAC_ADDR                      = C.NL80211_FEATURE_ND_RANDOM_MAC_ADDR
+	NL80211_FEATURE_NEED_OBSS_SCAN                          = C.NL80211_FEATURE_NEED_OBSS_SCAN
+	NL80211_FEATURE_P2P_DEVICE_NEEDS_CHANNEL                = C.NL80211_FEATURE_P2P_DEVICE_NEEDS_CHANNEL
+	NL80211_FEATURE_P2P_GO_CTWIN                            = C.NL80211_FEATURE_P2P_GO_CTWIN
+	NL80211_FEATURE_P2P_GO_OPPPS                            = C.NL80211_FEATURE_P2P_GO_OPPPS
+	NL80211_FEATURE_QUIET                                   = C.NL80211_FEATURE_QUIET
+	NL80211_FEATURE_SAE                                     = C.NL80211_FEATURE_SAE
+	NL80211_FEATURE_SCAN_FLUSH                              = C.NL80211_FEATURE_SCAN_FLUSH
+	NL80211_FEATURE_SCAN_RANDOM_MAC_ADDR                    = C.NL80211_FEATURE_SCAN_RANDOM_MAC_ADDR
+	NL80211_FEATURE_SCHED_SCAN_RANDOM_MAC_ADDR              = C.NL80211_FEATURE_SCHED_SCAN_RANDOM_MAC_ADDR
+	NL80211_FEATURE_SK_TX_STATUS                            = C.NL80211_FEATURE_SK_TX_STATUS
+	NL80211_FEATURE_STATIC_SMPS                             = C.NL80211_FEATURE_STATIC_SMPS
+	NL80211_FEATURE_SUPPORTS_WMM_ADMISSION                  = C.NL80211_FEATURE_SUPPORTS_WMM_ADMISSION
+	NL80211_FEATURE_TDLS_CHANNEL_SWITCH                     = C.NL80211_FEATURE_TDLS_CHANNEL_SWITCH
+	NL80211_FEATURE_TX_POWER_INSERTION                      = C.NL80211_FEATURE_TX_POWER_INSERTION
+	NL80211_FEATURE_USERSPACE_MPM                           = C.NL80211_FEATURE_USERSPACE_MPM
+	NL80211_FEATURE_VIF_TXPOWER                             = C.NL80211_FEATURE_VIF_TXPOWER
+	NL80211_FEATURE_WFA_TPC_IE_IN_PROBES                    = C.NL80211_FEATURE_WFA_TPC_IE_IN_PROBES
+	NL80211_FILS_DISCOVERY_ATTR_INT_MAX                     = C.NL80211_FILS_DISCOVERY_ATTR_INT_MAX
+	NL80211_FILS_DISCOVERY_ATTR_INT_MIN                     = C.NL80211_FILS_DISCOVERY_ATTR_INT_MIN
+	NL80211_FILS_DISCOVERY_ATTR_MAX                         = C.NL80211_FILS_DISCOVERY_ATTR_MAX
+	NL80211_FILS_DISCOVERY_ATTR_TMPL                        = C.NL80211_FILS_DISCOVERY_ATTR_TMPL
+	NL80211_FILS_DISCOVERY_TMPL_MIN_LEN                     = C.NL80211_FILS_DISCOVERY_TMPL_MIN_LEN
+	NL80211_FREQUENCY_ATTR_16MHZ                            = C.NL80211_FREQUENCY_ATTR_16MHZ
+	NL80211_FREQUENCY_ATTR_1MHZ                             = C.NL80211_FREQUENCY_ATTR_1MHZ
+	NL80211_FREQUENCY_ATTR_2MHZ                             = C.NL80211_FREQUENCY_ATTR_2MHZ
+	NL80211_FREQUENCY_ATTR_4MHZ                             = C.NL80211_FREQUENCY_ATTR_4MHZ
+	NL80211_FREQUENCY_ATTR_8MHZ                             = C.NL80211_FREQUENCY_ATTR_8MHZ
+	NL80211_FREQUENCY_ATTR_DFS_CAC_TIME                     = C.NL80211_FREQUENCY_ATTR_DFS_CAC_TIME
+	NL80211_FREQUENCY_ATTR_DFS_STATE                        = C.NL80211_FREQUENCY_ATTR_DFS_STATE
+	NL80211_FREQUENCY_ATTR_DFS_TIME                         = C.NL80211_FREQUENCY_ATTR_DFS_TIME
+	NL80211_FREQUENCY_ATTR_DISABLED                         = C.NL80211_FREQUENCY_ATTR_DISABLED
+	NL80211_FREQUENCY_ATTR_FREQ                             = C.NL80211_FREQUENCY_ATTR_FREQ
+	NL80211_FREQUENCY_ATTR_GO_CONCURRENT                    = C.NL80211_FREQUENCY_ATTR_GO_CONCURRENT
+	NL80211_FREQUENCY_ATTR_INDOOR_ONLY                      = C.NL80211_FREQUENCY_ATTR_INDOOR_ONLY
+	NL80211_FREQUENCY_ATTR_IR_CONCURRENT                    = C.NL80211_FREQUENCY_ATTR_IR_CONCURRENT
+	NL80211_FREQUENCY_ATTR_MAX                              = C.NL80211_FREQUENCY_ATTR_MAX
+	NL80211_FREQUENCY_ATTR_MAX_TX_POWER                     = C.NL80211_FREQUENCY_ATTR_MAX_TX_POWER
+	NL80211_FREQUENCY_ATTR_NO_10MHZ                         = C.NL80211_FREQUENCY_ATTR_NO_10MHZ
+	NL80211_FREQUENCY_ATTR_NO_160MHZ                        = C.NL80211_FREQUENCY_ATTR_NO_160MHZ
+	NL80211_FREQUENCY_ATTR_NO_20MHZ                         = C.NL80211_FREQUENCY_ATTR_NO_20MHZ
+	NL80211_FREQUENCY_ATTR_NO_320MHZ                        = C.NL80211_FREQUENCY_ATTR_NO_320MHZ
+	NL80211_FREQUENCY_ATTR_NO_80MHZ                         = C.NL80211_FREQUENCY_ATTR_NO_80MHZ
+	NL80211_FREQUENCY_ATTR_NO_EHT                           = C.NL80211_FREQUENCY_ATTR_NO_EHT
+	NL80211_FREQUENCY_ATTR_NO_HE                            = C.NL80211_FREQUENCY_ATTR_NO_HE
+	NL80211_FREQUENCY_ATTR_NO_HT40_MINUS                    = C.NL80211_FREQUENCY_ATTR_NO_HT40_MINUS
+	NL80211_FREQUENCY_ATTR_NO_HT40_PLUS                     = C.NL80211_FREQUENCY_ATTR_NO_HT40_PLUS
+	NL80211_FREQUENCY_ATTR_NO_IBSS                          = C.NL80211_FREQUENCY_ATTR_NO_IBSS
+	NL80211_FREQUENCY_ATTR_NO_IR                            = C.NL80211_FREQUENCY_ATTR_NO_IR
+	NL80211_FREQUENCY_ATTR_OFFSET                           = C.NL80211_FREQUENCY_ATTR_OFFSET
+	NL80211_FREQUENCY_ATTR_PASSIVE_SCAN                     = C.NL80211_FREQUENCY_ATTR_PASSIVE_SCAN
+	NL80211_FREQUENCY_ATTR_RADAR                            = C.NL80211_FREQUENCY_ATTR_RADAR
+	NL80211_FREQUENCY_ATTR_WMM                              = C.NL80211_FREQUENCY_ATTR_WMM
+	NL80211_FTM_RESP_ATTR_CIVICLOC                          = C.NL80211_FTM_RESP_ATTR_CIVICLOC
+	NL80211_FTM_RESP_ATTR_ENABLED                           = C.NL80211_FTM_RESP_ATTR_ENABLED
+	NL80211_FTM_RESP_ATTR_LCI                               = C.NL80211_FTM_RESP_ATTR_LCI
+	NL80211_FTM_RESP_ATTR_MAX                               = C.NL80211_FTM_RESP_ATTR_MAX
+	NL80211_FTM_STATS_ASAP_NUM                              = C.NL80211_FTM_STATS_ASAP_NUM
+	NL80211_FTM_STATS_FAILED_NUM                            = C.NL80211_FTM_STATS_FAILED_NUM
+	NL80211_FTM_STATS_MAX                                   = C.NL80211_FTM_STATS_MAX
+	NL80211_FTM_STATS_NON_ASAP_NUM                          = C.NL80211_FTM_STATS_NON_ASAP_NUM
+	NL80211_FTM_STATS_OUT_OF_WINDOW_TRIGGERS_NUM            = C.NL80211_FTM_STATS_OUT_OF_WINDOW_TRIGGERS_NUM
+	NL80211_FTM_STATS_PAD                                   = C.NL80211_FTM_STATS_PAD
+	NL80211_FTM_STATS_PARTIAL_NUM                           = C.NL80211_FTM_STATS_PARTIAL_NUM
+	NL80211_FTM_STATS_RESCHEDULE_REQUESTS_NUM               = C.NL80211_FTM_STATS_RESCHEDULE_REQUESTS_NUM
+	NL80211_FTM_STATS_SUCCESS_NUM                           = C.NL80211_FTM_STATS_SUCCESS_NUM
+	NL80211_FTM_STATS_TOTAL_DURATION_MSEC                   = C.NL80211_FTM_STATS_TOTAL_DURATION_MSEC
+	NL80211_FTM_STATS_UNKNOWN_TRIGGERS_NUM                  = C.NL80211_FTM_STATS_UNKNOWN_TRIGGERS_NUM
+	NL80211_GENL_NAME                                       = C.NL80211_GENL_NAME
+	NL80211_HE_BSS_COLOR_ATTR_COLOR                         = C.NL80211_HE_BSS_COLOR_ATTR_COLOR
+	NL80211_HE_BSS_COLOR_ATTR_DISABLED                      = C.NL80211_HE_BSS_COLOR_ATTR_DISABLED
+	NL80211_HE_BSS_COLOR_ATTR_MAX                           = C.NL80211_HE_BSS_COLOR_ATTR_MAX
+	NL80211_HE_BSS_COLOR_ATTR_PARTIAL                       = C.NL80211_HE_BSS_COLOR_ATTR_PARTIAL
+	NL80211_HE_MAX_CAPABILITY_LEN                           = C.NL80211_HE_MAX_CAPABILITY_LEN
+	NL80211_HE_MIN_CAPABILITY_LEN                           = C.NL80211_HE_MIN_CAPABILITY_LEN
+	NL80211_HE_NSS_MAX                                      = C.NL80211_HE_NSS_MAX
+	NL80211_HE_OBSS_PD_ATTR_BSS_COLOR_BITMAP                = C.NL80211_HE_OBSS_PD_ATTR_BSS_COLOR_BITMAP
+	NL80211_HE_OBSS_PD_ATTR_MAX                             = C.NL80211_HE_OBSS_PD_ATTR_MAX
+	NL80211_HE_OBSS_PD_ATTR_MAX_OFFSET                      = C.NL80211_HE_OBSS_PD_ATTR_MAX_OFFSET
+	NL80211_HE_OBSS_PD_ATTR_MIN_OFFSET                      = C.NL80211_HE_OBSS_PD_ATTR_MIN_OFFSET
+	NL80211_HE_OBSS_PD_ATTR_NON_SRG_MAX_OFFSET              = C.NL80211_HE_OBSS_PD_ATTR_NON_SRG_MAX_OFFSET
+	NL80211_HE_OBSS_PD_ATTR_PARTIAL_BSSID_BITMAP            = C.NL80211_HE_OBSS_PD_ATTR_PARTIAL_BSSID_BITMAP
+	NL80211_HE_OBSS_PD_ATTR_SR_CTRL                         = C.NL80211_HE_OBSS_PD_ATTR_SR_CTRL
+	NL80211_HIDDEN_SSID_NOT_IN_USE                          = C.NL80211_HIDDEN_SSID_NOT_IN_USE
+	NL80211_HIDDEN_SSID_ZERO_CONTENTS                       = C.NL80211_HIDDEN_SSID_ZERO_CONTENTS
+	NL80211_HIDDEN_SSID_ZERO_LEN                            = C.NL80211_HIDDEN_SSID_ZERO_LEN
+	NL80211_HT_CAPABILITY_LEN                               = C.NL80211_HT_CAPABILITY_LEN
+	NL80211_IFACE_COMB_BI_MIN_GCD                           = C.NL80211_IFACE_COMB_BI_MIN_GCD
+	NL80211_IFACE_COMB_LIMITS                               = C.NL80211_IFACE_COMB_LIMITS
+	NL80211_IFACE_COMB_MAXNUM                               = C.NL80211_IFACE_COMB_MAXNUM
+	NL80211_IFACE_COMB_NUM_CHANNELS                         = C.NL80211_IFACE_COMB_NUM_CHANNELS
+	NL80211_IFACE_COMB_RADAR_DETECT_REGIONS                 = C.NL80211_IFACE_COMB_RADAR_DETECT_REGIONS
+	NL80211_IFACE_COMB_RADAR_DETECT_WIDTHS                  = C.NL80211_IFACE_COMB_RADAR_DETECT_WIDTHS
+	NL80211_IFACE_COMB_STA_AP_BI_MATCH                      = C.NL80211_IFACE_COMB_STA_AP_BI_MATCH
+	NL80211_IFACE_COMB_UNSPEC                               = C.NL80211_IFACE_COMB_UNSPEC
+	NL80211_IFACE_LIMIT_MAX                                 = C.NL80211_IFACE_LIMIT_MAX
+	NL80211_IFACE_LIMIT_TYPES                               = C.NL80211_IFACE_LIMIT_TYPES
+	NL80211_IFACE_LIMIT_UNSPEC                              = C.NL80211_IFACE_LIMIT_UNSPEC
+	NL80211_IFTYPE_ADHOC                                    = C.NL80211_IFTYPE_ADHOC
+	NL80211_IFTYPE_AKM_ATTR_IFTYPES                         = C.NL80211_IFTYPE_AKM_ATTR_IFTYPES
+	NL80211_IFTYPE_AKM_ATTR_MAX                             = C.NL80211_IFTYPE_AKM_ATTR_MAX
+	NL80211_IFTYPE_AKM_ATTR_SUITES                          = C.NL80211_IFTYPE_AKM_ATTR_SUITES
+	NL80211_IFTYPE_AP                                       = C.NL80211_IFTYPE_AP
+	NL80211_IFTYPE_AP_VLAN                                  = C.NL80211_IFTYPE_AP_VLAN
+	NL80211_IFTYPE_MAX                                      = C.NL80211_IFTYPE_MAX
+	NL80211_IFTYPE_MESH_POINT                               = C.NL80211_IFTYPE_MESH_POINT
+	NL80211_IFTYPE_MONITOR                                  = C.NL80211_IFTYPE_MONITOR
+	NL80211_IFTYPE_NAN                                      = C.NL80211_IFTYPE_NAN
+	NL80211_IFTYPE_OCB                                      = C.NL80211_IFTYPE_OCB
+	NL80211_IFTYPE_P2P_CLIENT                               = C.NL80211_IFTYPE_P2P_CLIENT
+	NL80211_IFTYPE_P2P_DEVICE                               = C.NL80211_IFTYPE_P2P_DEVICE
+	NL80211_IFTYPE_P2P_GO                                   = C.NL80211_IFTYPE_P2P_GO
+	NL80211_IFTYPE_STATION                                  = C.NL80211_IFTYPE_STATION
+	NL80211_IFTYPE_UNSPECIFIED                              = C.NL80211_IFTYPE_UNSPECIFIED
+	NL80211_IFTYPE_WDS                                      = C.NL80211_IFTYPE_WDS
+	NL80211_KCK_EXT_LEN                                     = C.NL80211_KCK_EXT_LEN
+	NL80211_KCK_LEN                                         = C.NL80211_KCK_LEN
+	NL80211_KEK_EXT_LEN                                     = C.NL80211_KEK_EXT_LEN
+	NL80211_KEK_LEN                                         = C.NL80211_KEK_LEN
+	NL80211_KEY_CIPHER                                      = C.NL80211_KEY_CIPHER
+	NL80211_KEY_DATA                                        = C.NL80211_KEY_DATA
+	NL80211_KEY_DEFAULT_BEACON                              = C.NL80211_KEY_DEFAULT_BEACON
+	NL80211_KEY_DEFAULT                                     = C.NL80211_KEY_DEFAULT
+	NL80211_KEY_DEFAULT_MGMT                                = C.NL80211_KEY_DEFAULT_MGMT
+	NL80211_KEY_DEFAULT_TYPE_MULTICAST                      = C.NL80211_KEY_DEFAULT_TYPE_MULTICAST
+	NL80211_KEY_DEFAULT_TYPES                               = C.NL80211_KEY_DEFAULT_TYPES
+	NL80211_KEY_DEFAULT_TYPE_UNICAST                        = C.NL80211_KEY_DEFAULT_TYPE_UNICAST
+	NL80211_KEY_IDX                                         = C.NL80211_KEY_IDX
+	NL80211_KEY_MAX                                         = C.NL80211_KEY_MAX
+	NL80211_KEY_MODE                                        = C.NL80211_KEY_MODE
+	NL80211_KEY_NO_TX                                       = C.NL80211_KEY_NO_TX
+	NL80211_KEY_RX_TX                                       = C.NL80211_KEY_RX_TX
+	NL80211_KEY_SEQ                                         = C.NL80211_KEY_SEQ
+	NL80211_KEY_SET_TX                                      = C.NL80211_KEY_SET_TX
+	NL80211_KEY_TYPE                                        = C.NL80211_KEY_TYPE
+	NL80211_KEYTYPE_GROUP                                   = C.NL80211_KEYTYPE_GROUP
+	NL80211_KEYTYPE_PAIRWISE                                = C.NL80211_KEYTYPE_PAIRWISE
+	NL80211_KEYTYPE_PEERKEY                                 = C.NL80211_KEYTYPE_PEERKEY
+	NL80211_MAX_NR_AKM_SUITES                               = C.NL80211_MAX_NR_AKM_SUITES
+	NL80211_MAX_NR_CIPHER_SUITES                            = C.NL80211_MAX_NR_CIPHER_SUITES
+	NL80211_MAX_SUPP_HT_RATES                               = C.NL80211_MAX_SUPP_HT_RATES
+	NL80211_MAX_SUPP_RATES                                  = C.NL80211_MAX_SUPP_RATES
+	NL80211_MAX_SUPP_REG_RULES                              = C.NL80211_MAX_SUPP_REG_RULES
+	NL80211_MBSSID_CONFIG_ATTR_EMA                          = C.NL80211_MBSSID_CONFIG_ATTR_EMA
+	NL80211_MBSSID_CONFIG_ATTR_INDEX                        = C.NL80211_MBSSID_CONFIG_ATTR_INDEX
+	NL80211_MBSSID_CONFIG_ATTR_MAX                          = C.NL80211_MBSSID_CONFIG_ATTR_MAX
+	NL80211_MBSSID_CONFIG_ATTR_MAX_EMA_PROFILE_PERIODICITY  = C.NL80211_MBSSID_CONFIG_ATTR_MAX_EMA_PROFILE_PERIODICITY
+	NL80211_MBSSID_CONFIG_ATTR_MAX_INTERFACES               = C.NL80211_MBSSID_CONFIG_ATTR_MAX_INTERFACES
+	NL80211_MBSSID_CONFIG_ATTR_TX_IFINDEX                   = C.NL80211_MBSSID_CONFIG_ATTR_TX_IFINDEX
+	NL80211_MESHCONF_ATTR_MAX                               = C.NL80211_MESHCONF_ATTR_MAX
+	NL80211_MESHCONF_AUTO_OPEN_PLINKS                       = C.NL80211_MESHCONF_AUTO_OPEN_PLINKS
+	NL80211_MESHCONF_AWAKE_WINDOW                           = C.NL80211_MESHCONF_AWAKE_WINDOW
+	NL80211_MESHCONF_CONFIRM_TIMEOUT                        = C.NL80211_MESHCONF_CONFIRM_TIMEOUT
+	NL80211_MESHCONF_CONNECTED_TO_AS                        = C.NL80211_MESHCONF_CONNECTED_TO_AS
+	NL80211_MESHCONF_CONNECTED_TO_GATE                      = C.NL80211_MESHCONF_CONNECTED_TO_GATE
+	NL80211_MESHCONF_ELEMENT_TTL                            = C.NL80211_MESHCONF_ELEMENT_TTL
+	NL80211_MESHCONF_FORWARDING                             = C.NL80211_MESHCONF_FORWARDING
+	NL80211_MESHCONF_GATE_ANNOUNCEMENTS                     = C.NL80211_MESHCONF_GATE_ANNOUNCEMENTS
+	NL80211_MESHCONF_HOLDING_TIMEOUT                        = C.NL80211_MESHCONF_HOLDING_TIMEOUT
+	NL80211_MESHCONF_HT_OPMODE                              = C.NL80211_MESHCONF_HT_OPMODE
+	NL80211_MESHCONF_HWMP_ACTIVE_PATH_TIMEOUT               = C.NL80211_MESHCONF_HWMP_ACTIVE_PATH_TIMEOUT
+	NL80211_MESHCONF_HWMP_CONFIRMATION_INTERVAL             = C.NL80211_MESHCONF_HWMP_CONFIRMATION_INTERVAL
+	NL80211_MESHCONF_HWMP_MAX_PREQ_RETRIES                  = C.NL80211_MESHCONF_HWMP_MAX_PREQ_RETRIES
+	NL80211_MESHCONF_HWMP_NET_DIAM_TRVS_TIME                = C.NL80211_MESHCONF_HWMP_NET_DIAM_TRVS_TIME
+	NL80211_MESHCONF_HWMP_PATH_TO_ROOT_TIMEOUT              = C.NL80211_MESHCONF_HWMP_PATH_TO_ROOT_TIMEOUT
+	NL80211_MESHCONF_HWMP_PERR_MIN_INTERVAL                 = C.NL80211_MESHCONF_HWMP_PERR_MIN_INTERVAL
+	NL80211_MESHCONF_HWMP_PREQ_MIN_INTERVAL                 = C.NL80211_MESHCONF_HWMP_PREQ_MIN_INTERVAL
+	NL80211_MESHCONF_HWMP_RANN_INTERVAL                     = C.NL80211_MESHCONF_HWMP_RANN_INTERVAL
+	NL80211_MESHCONF_HWMP_ROOT_INTERVAL                     = C.NL80211_MESHCONF_HWMP_ROOT_INTERVAL
+	NL80211_MESHCONF_HWMP_ROOTMODE                          = C.NL80211_MESHCONF_HWMP_ROOTMODE
+	NL80211_MESHCONF_MAX_PEER_LINKS                         = C.NL80211_MESHCONF_MAX_PEER_LINKS
+	NL80211_MESHCONF_MAX_RETRIES                            = C.NL80211_MESHCONF_MAX_RETRIES
+	NL80211_MESHCONF_MIN_DISCOVERY_TIMEOUT                  = C.NL80211_MESHCONF_MIN_DISCOVERY_TIMEOUT
+	NL80211_MESHCONF_NOLEARN                                = C.NL80211_MESHCONF_NOLEARN
+	NL80211_MESHCONF_PATH_REFRESH_TIME                      = C.NL80211_MESHCONF_PATH_REFRESH_TIME
+	NL80211_MESHCONF_PLINK_TIMEOUT                          = C.NL80211_MESHCONF_PLINK_TIMEOUT
+	NL80211_MESHCONF_POWER_MODE                             = C.NL80211_MESHCONF_POWER_MODE
+	NL80211_MESHCONF_RETRY_TIMEOUT                          = C.NL80211_MESHCONF_RETRY_TIMEOUT
+	NL80211_MESHCONF_RSSI_THRESHOLD                         = C.NL80211_MESHCONF_RSSI_THRESHOLD
+	NL80211_MESHCONF_SYNC_OFFSET_MAX_NEIGHBOR               = C.NL80211_MESHCONF_SYNC_OFFSET_MAX_NEIGHBOR
+	NL80211_MESHCONF_TTL                                    = C.NL80211_MESHCONF_TTL
+	NL80211_MESH_POWER_ACTIVE                               = C.NL80211_MESH_POWER_ACTIVE
+	NL80211_MESH_POWER_DEEP_SLEEP                           = C.NL80211_MESH_POWER_DEEP_SLEEP
+	NL80211_MESH_POWER_LIGHT_SLEEP                          = C.NL80211_MESH_POWER_LIGHT_SLEEP
+	NL80211_MESH_POWER_MAX                                  = C.NL80211_MESH_POWER_MAX
+	NL80211_MESH_POWER_UNKNOWN                              = C.NL80211_MESH_POWER_UNKNOWN
+	NL80211_MESH_SETUP_ATTR_MAX                             = C.NL80211_MESH_SETUP_ATTR_MAX
+	NL80211_MESH_SETUP_AUTH_PROTOCOL                        = C.NL80211_MESH_SETUP_AUTH_PROTOCOL
+	NL80211_MESH_SETUP_ENABLE_VENDOR_METRIC                 = C.NL80211_MESH_SETUP_ENABLE_VENDOR_METRIC
+	NL80211_MESH_SETUP_ENABLE_VENDOR_PATH_SEL               = C.NL80211_MESH_SETUP_ENABLE_VENDOR_PATH_SEL
+	NL80211_MESH_SETUP_ENABLE_VENDOR_SYNC                   = C.NL80211_MESH_SETUP_ENABLE_VENDOR_SYNC
+	NL80211_MESH_SETUP_IE                                   = C.NL80211_MESH_SETUP_IE
+	NL80211_MESH_SETUP_USERSPACE_AMPE                       = C.NL80211_MESH_SETUP_USERSPACE_AMPE
+	NL80211_MESH_SETUP_USERSPACE_AUTH                       = C.NL80211_MESH_SETUP_USERSPACE_AUTH
+	NL80211_MESH_SETUP_USERSPACE_MPM                        = C.NL80211_MESH_SETUP_USERSPACE_MPM
+	NL80211_MESH_SETUP_VENDOR_PATH_SEL_IE                   = C.NL80211_MESH_SETUP_VENDOR_PATH_SEL_IE
+	NL80211_MFP_NO                                          = C.NL80211_MFP_NO
+	NL80211_MFP_OPTIONAL                                    = C.NL80211_MFP_OPTIONAL
+	NL80211_MFP_REQUIRED                                    = C.NL80211_MFP_REQUIRED
+	NL80211_MIN_REMAIN_ON_CHANNEL_TIME                      = C.NL80211_MIN_REMAIN_ON_CHANNEL_TIME
+	NL80211_MNTR_FLAG_ACTIVE                                = C.NL80211_MNTR_FLAG_ACTIVE
+	NL80211_MNTR_FLAG_CONTROL                               = C.NL80211_MNTR_FLAG_CONTROL
+	NL80211_MNTR_FLAG_COOK_FRAMES                           = C.NL80211_MNTR_FLAG_COOK_FRAMES
+	NL80211_MNTR_FLAG_FCSFAIL                               = C.NL80211_MNTR_FLAG_FCSFAIL
+	NL80211_MNTR_FLAG_MAX                                   = C.NL80211_MNTR_FLAG_MAX
+	NL80211_MNTR_FLAG_OTHER_BSS                             = C.NL80211_MNTR_FLAG_OTHER_BSS
+	NL80211_MNTR_FLAG_PLCPFAIL                              = C.NL80211_MNTR_FLAG_PLCPFAIL
+	NL80211_MPATH_FLAG_ACTIVE                               = C.NL80211_MPATH_FLAG_ACTIVE
+	NL80211_MPATH_FLAG_FIXED                                = C.NL80211_MPATH_FLAG_FIXED
+	NL80211_MPATH_FLAG_RESOLVED                             = C.NL80211_MPATH_FLAG_RESOLVED
+	NL80211_MPATH_FLAG_RESOLVING                            = C.NL80211_MPATH_FLAG_RESOLVING
+	NL80211_MPATH_FLAG_SN_VALID                             = C.NL80211_MPATH_FLAG_SN_VALID
+	NL80211_MPATH_INFO_DISCOVERY_RETRIES                    = C.NL80211_MPATH_INFO_DISCOVERY_RETRIES
+	NL80211_MPATH_INFO_DISCOVERY_TIMEOUT                    = C.NL80211_MPATH_INFO_DISCOVERY_TIMEOUT
+	NL80211_MPATH_INFO_EXPTIME                              = C.NL80211_MPATH_INFO_EXPTIME
+	NL80211_MPATH_INFO_FLAGS                                = C.NL80211_MPATH_INFO_FLAGS
+	NL80211_MPATH_INFO_FRAME_QLEN                           = C.NL80211_MPATH_INFO_FRAME_QLEN
+	NL80211_MPATH_INFO_HOP_COUNT                            = C.NL80211_MPATH_INFO_HOP_COUNT
+	NL80211_MPATH_INFO_MAX                                  = C.NL80211_MPATH_INFO_MAX
+	NL80211_MPATH_INFO_METRIC                               = C.NL80211_MPATH_INFO_METRIC
+	NL80211_MPATH_INFO_PATH_CHANGE                          = C.NL80211_MPATH_INFO_PATH_CHANGE
+	NL80211_MPATH_INFO_SN                                   = C.NL80211_MPATH_INFO_SN
+	NL80211_MULTICAST_GROUP_CONFIG                          = C.NL80211_MULTICAST_GROUP_CONFIG
+	NL80211_MULTICAST_GROUP_MLME                            = C.NL80211_MULTICAST_GROUP_MLME
+	NL80211_MULTICAST_GROUP_NAN                             = C.NL80211_MULTICAST_GROUP_NAN
+	NL80211_MULTICAST_GROUP_REG                             = C.NL80211_MULTICAST_GROUP_REG
+	NL80211_MULTICAST_GROUP_SCAN                            = C.NL80211_MULTICAST_GROUP_SCAN
+	NL80211_MULTICAST_GROUP_TESTMODE                        = C.NL80211_MULTICAST_GROUP_TESTMODE
+	NL80211_MULTICAST_GROUP_VENDOR                          = C.NL80211_MULTICAST_GROUP_VENDOR
+	NL80211_NAN_FUNC_ATTR_MAX                               = C.NL80211_NAN_FUNC_ATTR_MAX
+	NL80211_NAN_FUNC_CLOSE_RANGE                            = C.NL80211_NAN_FUNC_CLOSE_RANGE
+	NL80211_NAN_FUNC_FOLLOW_UP                              = C.NL80211_NAN_FUNC_FOLLOW_UP
+	NL80211_NAN_FUNC_FOLLOW_UP_DEST                         = C.NL80211_NAN_FUNC_FOLLOW_UP_DEST
+	NL80211_NAN_FUNC_FOLLOW_UP_ID                           = C.NL80211_NAN_FUNC_FOLLOW_UP_ID
+	NL80211_NAN_FUNC_FOLLOW_UP_REQ_ID                       = C.NL80211_NAN_FUNC_FOLLOW_UP_REQ_ID
+	NL80211_NAN_FUNC_INSTANCE_ID                            = C.NL80211_NAN_FUNC_INSTANCE_ID
+	NL80211_NAN_FUNC_MAX_TYPE                               = C.NL80211_NAN_FUNC_MAX_TYPE
+	NL80211_NAN_FUNC_PUBLISH_BCAST                          = C.NL80211_NAN_FUNC_PUBLISH_BCAST
+	NL80211_NAN_FUNC_PUBLISH                                = C.NL80211_NAN_FUNC_PUBLISH
+	NL80211_NAN_FUNC_PUBLISH_TYPE                           = C.NL80211_NAN_FUNC_PUBLISH_TYPE
+	NL80211_NAN_FUNC_RX_MATCH_FILTER                        = C.NL80211_NAN_FUNC_RX_MATCH_FILTER
+	NL80211_NAN_FUNC_SERVICE_ID                             = C.NL80211_NAN_FUNC_SERVICE_ID
+	NL80211_NAN_FUNC_SERVICE_ID_LEN                         = C.NL80211_NAN_FUNC_SERVICE_ID_LEN
+	NL80211_NAN_FUNC_SERVICE_INFO                           = C.NL80211_NAN_FUNC_SERVICE_INFO
+	NL80211_NAN_FUNC_SERVICE_SPEC_INFO_MAX_LEN              = C.NL80211_NAN_FUNC_SERVICE_SPEC_INFO_MAX_LEN
+	NL80211_NAN_FUNC_SRF                                    = C.NL80211_NAN_FUNC_SRF
+	NL80211_NAN_FUNC_SRF_MAX_LEN                            = C.NL80211_NAN_FUNC_SRF_MAX_LEN
+	NL80211_NAN_FUNC_SUBSCRIBE_ACTIVE                       = C.NL80211_NAN_FUNC_SUBSCRIBE_ACTIVE
+	NL80211_NAN_FUNC_SUBSCRIBE                              = C.NL80211_NAN_FUNC_SUBSCRIBE
+	NL80211_NAN_FUNC_TERM_REASON                            = C.NL80211_NAN_FUNC_TERM_REASON
+	NL80211_NAN_FUNC_TERM_REASON_ERROR                      = C.NL80211_NAN_FUNC_TERM_REASON_ERROR
+	NL80211_NAN_FUNC_TERM_REASON_TTL_EXPIRED                = C.NL80211_NAN_FUNC_TERM_REASON_TTL_EXPIRED
+	NL80211_NAN_FUNC_TERM_REASON_USER_REQUEST               = C.NL80211_NAN_FUNC_TERM_REASON_USER_REQUEST
+	NL80211_NAN_FUNC_TTL                                    = C.NL80211_NAN_FUNC_TTL
+	NL80211_NAN_FUNC_TX_MATCH_FILTER                        = C.NL80211_NAN_FUNC_TX_MATCH_FILTER
+	NL80211_NAN_FUNC_TYPE                                   = C.NL80211_NAN_FUNC_TYPE
+	NL80211_NAN_MATCH_ATTR_MAX                              = C.NL80211_NAN_MATCH_ATTR_MAX
+	NL80211_NAN_MATCH_FUNC_LOCAL                            = C.NL80211_NAN_MATCH_FUNC_LOCAL
+	NL80211_NAN_MATCH_FUNC_PEER                             = C.NL80211_NAN_MATCH_FUNC_PEER
+	NL80211_NAN_SOLICITED_PUBLISH                           = C.NL80211_NAN_SOLICITED_PUBLISH
+	NL80211_NAN_SRF_ATTR_MAX                                = C.NL80211_NAN_SRF_ATTR_MAX
+	NL80211_NAN_SRF_BF                                      = C.NL80211_NAN_SRF_BF
+	NL80211_NAN_SRF_BF_IDX                                  = C.NL80211_NAN_SRF_BF_IDX
+	NL80211_NAN_SRF_INCLUDE                                 = C.NL80211_NAN_SRF_INCLUDE
+	NL80211_NAN_SRF_MAC_ADDRS                               = C.NL80211_NAN_SRF_MAC_ADDRS
+	NL80211_NAN_UNSOLICITED_PUBLISH                         = C.NL80211_NAN_UNSOLICITED_PUBLISH
+	NL80211_NUM_ACS                                         = C.NL80211_NUM_ACS
+	NL80211_P2P_PS_SUPPORTED                                = C.NL80211_P2P_PS_SUPPORTED
+	NL80211_P2P_PS_UNSUPPORTED                              = C.NL80211_P2P_PS_UNSUPPORTED
+	NL80211_PKTPAT_MASK                                     = C.NL80211_PKTPAT_MASK
+	NL80211_PKTPAT_OFFSET                                   = C.NL80211_PKTPAT_OFFSET
+	NL80211_PKTPAT_PATTERN                                  = C.NL80211_PKTPAT_PATTERN
+	NL80211_PLINK_ACTION_BLOCK                              = C.NL80211_PLINK_ACTION_BLOCK
+	NL80211_PLINK_ACTION_NO_ACTION                          = C.NL80211_PLINK_ACTION_NO_ACTION
+	NL80211_PLINK_ACTION_OPEN                               = C.NL80211_PLINK_ACTION_OPEN
+	NL80211_PLINK_BLOCKED                                   = C.NL80211_PLINK_BLOCKED
+	NL80211_PLINK_CNF_RCVD                                  = C.NL80211_PLINK_CNF_RCVD
+	NL80211_PLINK_ESTAB                                     = C.NL80211_PLINK_ESTAB
+	NL80211_PLINK_HOLDING                                   = C.NL80211_PLINK_HOLDING
+	NL80211_PLINK_LISTEN                                    = C.NL80211_PLINK_LISTEN
+	NL80211_PLINK_OPN_RCVD                                  = C.NL80211_PLINK_OPN_RCVD
+	NL80211_PLINK_OPN_SNT                                   = C.NL80211_PLINK_OPN_SNT
+	NL80211_PMKSA_CANDIDATE_BSSID                           = C.NL80211_PMKSA_CANDIDATE_BSSID
+	NL80211_PMKSA_CANDIDATE_INDEX                           = C.NL80211_PMKSA_CANDIDATE_INDEX
+	NL80211_PMKSA_CANDIDATE_PREAUTH                         = C.NL80211_PMKSA_CANDIDATE_PREAUTH
+	NL80211_PMSR_ATTR_MAX                                   = C.NL80211_PMSR_ATTR_MAX
+	NL80211_PMSR_ATTR_MAX_PEERS                             = C.NL80211_PMSR_ATTR_MAX_PEERS
+	NL80211_PMSR_ATTR_PEERS                                 = C.NL80211_PMSR_ATTR_PEERS
+	NL80211_PMSR_ATTR_RANDOMIZE_MAC_ADDR                    = C.NL80211_PMSR_ATTR_RANDOMIZE_MAC_ADDR
+	NL80211_PMSR_ATTR_REPORT_AP_TSF                         = C.NL80211_PMSR_ATTR_REPORT_AP_TSF
+	NL80211_PMSR_ATTR_TYPE_CAPA                             = C.NL80211_PMSR_ATTR_TYPE_CAPA
+	NL80211_PMSR_FTM_CAPA_ATTR_ASAP                         = C.NL80211_PMSR_FTM_CAPA_ATTR_ASAP
+	NL80211_PMSR_FTM_CAPA_ATTR_BANDWIDTHS                   = C.NL80211_PMSR_FTM_CAPA_ATTR_BANDWIDTHS
+	NL80211_PMSR_FTM_CAPA_ATTR_MAX_BURSTS_EXPONENT          = C.NL80211_PMSR_FTM_CAPA_ATTR_MAX_BURSTS_EXPONENT
+	NL80211_PMSR_FTM_CAPA_ATTR_MAX                          = C.NL80211_PMSR_FTM_CAPA_ATTR_MAX
+	NL80211_PMSR_FTM_CAPA_ATTR_MAX_FTMS_PER_BURST           = C.NL80211_PMSR_FTM_CAPA_ATTR_MAX_FTMS_PER_BURST
+	NL80211_PMSR_FTM_CAPA_ATTR_NON_ASAP                     = C.NL80211_PMSR_FTM_CAPA_ATTR_NON_ASAP
+	NL80211_PMSR_FTM_CAPA_ATTR_NON_TRIGGER_BASED            = C.NL80211_PMSR_FTM_CAPA_ATTR_NON_TRIGGER_BASED
+	NL80211_PMSR_FTM_CAPA_ATTR_PREAMBLES                    = C.NL80211_PMSR_FTM_CAPA_ATTR_PREAMBLES
+	NL80211_PMSR_FTM_CAPA_ATTR_REQ_CIVICLOC                 = C.NL80211_PMSR_FTM_CAPA_ATTR_REQ_CIVICLOC
+	NL80211_PMSR_FTM_CAPA_ATTR_REQ_LCI                      = C.NL80211_PMSR_FTM_CAPA_ATTR_REQ_LCI
+	NL80211_PMSR_FTM_CAPA_ATTR_TRIGGER_BASED                = C.NL80211_PMSR_FTM_CAPA_ATTR_TRIGGER_BASED
+	NL80211_PMSR_FTM_FAILURE_BAD_CHANGED_PARAMS             = C.NL80211_PMSR_FTM_FAILURE_BAD_CHANGED_PARAMS
+	NL80211_PMSR_FTM_FAILURE_INVALID_TIMESTAMP              = C.NL80211_PMSR_FTM_FAILURE_INVALID_TIMESTAMP
+	NL80211_PMSR_FTM_FAILURE_NO_RESPONSE                    = C.NL80211_PMSR_FTM_FAILURE_NO_RESPONSE
+	NL80211_PMSR_FTM_FAILURE_PEER_BUSY                      = C.NL80211_PMSR_FTM_FAILURE_PEER_BUSY
+	NL80211_PMSR_FTM_FAILURE_PEER_NOT_CAPABLE               = C.NL80211_PMSR_FTM_FAILURE_PEER_NOT_CAPABLE
+	NL80211_PMSR_FTM_FAILURE_REJECTED                       = C.NL80211_PMSR_FTM_FAILURE_REJECTED
+	NL80211_PMSR_FTM_FAILURE_UNSPECIFIED                    = C.NL80211_PMSR_FTM_FAILURE_UNSPECIFIED
+	NL80211_PMSR_FTM_FAILURE_WRONG_CHANNEL                  = C.NL80211_PMSR_FTM_FAILURE_WRONG_CHANNEL
+	NL80211_PMSR_FTM_REQ_ATTR_ASAP                          = C.NL80211_PMSR_FTM_REQ_ATTR_ASAP
+	NL80211_PMSR_FTM_REQ_ATTR_BSS_COLOR                     = C.NL80211_PMSR_FTM_REQ_ATTR_BSS_COLOR
+	NL80211_PMSR_FTM_REQ_ATTR_BURST_DURATION                = C.NL80211_PMSR_FTM_REQ_ATTR_BURST_DURATION
+	NL80211_PMSR_FTM_REQ_ATTR_BURST_PERIOD                  = C.NL80211_PMSR_FTM_REQ_ATTR_BURST_PERIOD
+	NL80211_PMSR_FTM_REQ_ATTR_FTMS_PER_BURST                = C.NL80211_PMSR_FTM_REQ_ATTR_FTMS_PER_BURST
+	NL80211_PMSR_FTM_REQ_ATTR_LMR_FEEDBACK                  = C.NL80211_PMSR_FTM_REQ_ATTR_LMR_FEEDBACK
+	NL80211_PMSR_FTM_REQ_ATTR_MAX                           = C.NL80211_PMSR_FTM_REQ_ATTR_MAX
+	NL80211_PMSR_FTM_REQ_ATTR_NON_TRIGGER_BASED             = C.NL80211_PMSR_FTM_REQ_ATTR_NON_TRIGGER_BASED
+	NL80211_PMSR_FTM_REQ_ATTR_NUM_BURSTS_EXP                = C.NL80211_PMSR_FTM_REQ_ATTR_NUM_BURSTS_EXP
+	NL80211_PMSR_FTM_REQ_ATTR_NUM_FTMR_RETRIES              = C.NL80211_PMSR_FTM_REQ_ATTR_NUM_FTMR_RETRIES
+	NL80211_PMSR_FTM_REQ_ATTR_PREAMBLE                      = C.NL80211_PMSR_FTM_REQ_ATTR_PREAMBLE
+	NL80211_PMSR_FTM_REQ_ATTR_REQUEST_CIVICLOC              = C.NL80211_PMSR_FTM_REQ_ATTR_REQUEST_CIVICLOC
+	NL80211_PMSR_FTM_REQ_ATTR_REQUEST_LCI                   = C.NL80211_PMSR_FTM_REQ_ATTR_REQUEST_LCI
+	NL80211_PMSR_FTM_REQ_ATTR_TRIGGER_BASED                 = C.NL80211_PMSR_FTM_REQ_ATTR_TRIGGER_BASED
+	NL80211_PMSR_FTM_RESP_ATTR_BURST_DURATION               = C.NL80211_PMSR_FTM_RESP_ATTR_BURST_DURATION
+	NL80211_PMSR_FTM_RESP_ATTR_BURST_INDEX                  = C.NL80211_PMSR_FTM_RESP_ATTR_BURST_INDEX
+	NL80211_PMSR_FTM_RESP_ATTR_BUSY_RETRY_TIME              = C.NL80211_PMSR_FTM_RESP_ATTR_BUSY_RETRY_TIME
+	NL80211_PMSR_FTM_RESP_ATTR_CIVICLOC                     = C.NL80211_PMSR_FTM_RESP_ATTR_CIVICLOC
+	NL80211_PMSR_FTM_RESP_ATTR_DIST_AVG                     = C.NL80211_PMSR_FTM_RESP_ATTR_DIST_AVG
+	NL80211_PMSR_FTM_RESP_ATTR_DIST_SPREAD                  = C.NL80211_PMSR_FTM_RESP_ATTR_DIST_SPREAD
+	NL80211_PMSR_FTM_RESP_ATTR_DIST_VARIANCE                = C.NL80211_PMSR_FTM_RESP_ATTR_DIST_VARIANCE
+	NL80211_PMSR_FTM_RESP_ATTR_FAIL_REASON                  = C.NL80211_PMSR_FTM_RESP_ATTR_FAIL_REASON
+	NL80211_PMSR_FTM_RESP_ATTR_FTMS_PER_BURST               = C.NL80211_PMSR_FTM_RESP_ATTR_FTMS_PER_BURST
+	NL80211_PMSR_FTM_RESP_ATTR_LCI                          = C.NL80211_PMSR_FTM_RESP_ATTR_LCI
+	NL80211_PMSR_FTM_RESP_ATTR_MAX                          = C.NL80211_PMSR_FTM_RESP_ATTR_MAX
+	NL80211_PMSR_FTM_RESP_ATTR_NUM_BURSTS_EXP               = C.NL80211_PMSR_FTM_RESP_ATTR_NUM_BURSTS_EXP
+	NL80211_PMSR_FTM_RESP_ATTR_NUM_FTMR_ATTEMPTS            = C.NL80211_PMSR_FTM_RESP_ATTR_NUM_FTMR_ATTEMPTS
+	NL80211_PMSR_FTM_RESP_ATTR_NUM_FTMR_SUCCESSES           = C.NL80211_PMSR_FTM_RESP_ATTR_NUM_FTMR_SUCCESSES
+	NL80211_PMSR_FTM_RESP_ATTR_PAD                          = C.NL80211_PMSR_FTM_RESP_ATTR_PAD
+	NL80211_PMSR_FTM_RESP_ATTR_RSSI_AVG                     = C.NL80211_PMSR_FTM_RESP_ATTR_RSSI_AVG
+	NL80211_PMSR_FTM_RESP_ATTR_RSSI_SPREAD                  = C.NL80211_PMSR_FTM_RESP_ATTR_RSSI_SPREAD
+	NL80211_PMSR_FTM_RESP_ATTR_RTT_AVG                      = C.NL80211_PMSR_FTM_RESP_ATTR_RTT_AVG
+	NL80211_PMSR_FTM_RESP_ATTR_RTT_SPREAD                   = C.NL80211_PMSR_FTM_RESP_ATTR_RTT_SPREAD
+	NL80211_PMSR_FTM_RESP_ATTR_RTT_VARIANCE                 = C.NL80211_PMSR_FTM_RESP_ATTR_RTT_VARIANCE
+	NL80211_PMSR_FTM_RESP_ATTR_RX_RATE                      = C.NL80211_PMSR_FTM_RESP_ATTR_RX_RATE
+	NL80211_PMSR_FTM_RESP_ATTR_TX_RATE                      = C.NL80211_PMSR_FTM_RESP_ATTR_TX_RATE
+	NL80211_PMSR_PEER_ATTR_ADDR                             = C.NL80211_PMSR_PEER_ATTR_ADDR
+	NL80211_PMSR_PEER_ATTR_CHAN                             = C.NL80211_PMSR_PEER_ATTR_CHAN
+	NL80211_PMSR_PEER_ATTR_MAX                              = C.NL80211_PMSR_PEER_ATTR_MAX
+	NL80211_PMSR_PEER_ATTR_REQ                              = C.NL80211_PMSR_PEER_ATTR_REQ
+	NL80211_PMSR_PEER_ATTR_RESP                             = C.NL80211_PMSR_PEER_ATTR_RESP
+	NL80211_PMSR_REQ_ATTR_DATA                              = C.NL80211_PMSR_REQ_ATTR_DATA
+	NL80211_PMSR_REQ_ATTR_GET_AP_TSF                        = C.NL80211_PMSR_REQ_ATTR_GET_AP_TSF
+	NL80211_PMSR_REQ_ATTR_MAX                               = C.NL80211_PMSR_REQ_ATTR_MAX
+	NL80211_PMSR_RESP_ATTR_AP_TSF                           = C.NL80211_PMSR_RESP_ATTR_AP_TSF
+	NL80211_PMSR_RESP_ATTR_DATA                             = C.NL80211_PMSR_RESP_ATTR_DATA
+	NL80211_PMSR_RESP_ATTR_FINAL                            = C.NL80211_PMSR_RESP_ATTR_FINAL
+	NL80211_PMSR_RESP_ATTR_HOST_TIME                        = C.NL80211_PMSR_RESP_ATTR_HOST_TIME
+	NL80211_PMSR_RESP_ATTR_MAX                              = C.NL80211_PMSR_RESP_ATTR_MAX
+	NL80211_PMSR_RESP_ATTR_PAD                              = C.NL80211_PMSR_RESP_ATTR_PAD
+	NL80211_PMSR_RESP_ATTR_STATUS                           = C.NL80211_PMSR_RESP_ATTR_STATUS
+	NL80211_PMSR_STATUS_FAILURE                             = C.NL80211_PMSR_STATUS_FAILURE
+	NL80211_PMSR_STATUS_REFUSED                             = C.NL80211_PMSR_STATUS_REFUSED
+	NL80211_PMSR_STATUS_SUCCESS                             = C.NL80211_PMSR_STATUS_SUCCESS
+	NL80211_PMSR_STATUS_TIMEOUT                             = C.NL80211_PMSR_STATUS_TIMEOUT
+	NL80211_PMSR_TYPE_FTM                                   = C.NL80211_PMSR_TYPE_FTM
+	NL80211_PMSR_TYPE_INVALID                               = C.NL80211_PMSR_TYPE_INVALID
+	NL80211_PMSR_TYPE_MAX                                   = C.NL80211_PMSR_TYPE_MAX
+	NL80211_PREAMBLE_DMG                                    = C.NL80211_PREAMBLE_DMG
+	NL80211_PREAMBLE_HE                                     = C.NL80211_PREAMBLE_HE
+	NL80211_PREAMBLE_HT                                     = C.NL80211_PREAMBLE_HT
+	NL80211_PREAMBLE_LEGACY                                 = C.NL80211_PREAMBLE_LEGACY
+	NL80211_PREAMBLE_VHT                                    = C.NL80211_PREAMBLE_VHT
+	NL80211_PROBE_RESP_OFFLOAD_SUPPORT_80211U               = C.NL80211_PROBE_RESP_OFFLOAD_SUPPORT_80211U
+	NL80211_PROBE_RESP_OFFLOAD_SUPPORT_P2P                  = C.NL80211_PROBE_RESP_OFFLOAD_SUPPORT_P2P
+	NL80211_PROBE_RESP_OFFLOAD_SUPPORT_WPS2                 = C.NL80211_PROBE_RESP_OFFLOAD_SUPPORT_WPS2
+	NL80211_PROBE_RESP_OFFLOAD_SUPPORT_WPS                  = C.NL80211_PROBE_RESP_OFFLOAD_SUPPORT_WPS
+	NL80211_PROTOCOL_FEATURE_SPLIT_WIPHY_DUMP               = C.NL80211_PROTOCOL_FEATURE_SPLIT_WIPHY_DUMP
+	NL80211_PS_DISABLED                                     = C.NL80211_PS_DISABLED
+	NL80211_PS_ENABLED                                      = C.NL80211_PS_ENABLED
+	NL80211_RADAR_CAC_ABORTED                               = C.NL80211_RADAR_CAC_ABORTED
+	NL80211_RADAR_CAC_FINISHED                              = C.NL80211_RADAR_CAC_FINISHED
+	NL80211_RADAR_CAC_STARTED                               = C.NL80211_RADAR_CAC_STARTED
+	NL80211_RADAR_DETECTED                                  = C.NL80211_RADAR_DETECTED
+	NL80211_RADAR_NOP_FINISHED                              = C.NL80211_RADAR_NOP_FINISHED
+	NL80211_RADAR_PRE_CAC_EXPIRED                           = C.NL80211_RADAR_PRE_CAC_EXPIRED
+	NL80211_RATE_INFO_10_MHZ_WIDTH                          = C.NL80211_RATE_INFO_10_MHZ_WIDTH
+	NL80211_RATE_INFO_160_MHZ_WIDTH                         = C.NL80211_RATE_INFO_160_MHZ_WIDTH
+	NL80211_RATE_INFO_320_MHZ_WIDTH                         = C.NL80211_RATE_INFO_320_MHZ_WIDTH
+	NL80211_RATE_INFO_40_MHZ_WIDTH                          = C.NL80211_RATE_INFO_40_MHZ_WIDTH
+	NL80211_RATE_INFO_5_MHZ_WIDTH                           = C.NL80211_RATE_INFO_5_MHZ_WIDTH
+	NL80211_RATE_INFO_80_MHZ_WIDTH                          = C.NL80211_RATE_INFO_80_MHZ_WIDTH
+	NL80211_RATE_INFO_80P80_MHZ_WIDTH                       = C.NL80211_RATE_INFO_80P80_MHZ_WIDTH
+	NL80211_RATE_INFO_BITRATE32                             = C.NL80211_RATE_INFO_BITRATE32
+	NL80211_RATE_INFO_BITRATE                               = C.NL80211_RATE_INFO_BITRATE
+	NL80211_RATE_INFO_EHT_GI_0_8                            = C.NL80211_RATE_INFO_EHT_GI_0_8
+	NL80211_RATE_INFO_EHT_GI_1_6                            = C.NL80211_RATE_INFO_EHT_GI_1_6
+	NL80211_RATE_INFO_EHT_GI_3_2                            = C.NL80211_RATE_INFO_EHT_GI_3_2
+	NL80211_RATE_INFO_EHT_GI                                = C.NL80211_RATE_INFO_EHT_GI
+	NL80211_RATE_INFO_EHT_MCS                               = C.NL80211_RATE_INFO_EHT_MCS
+	NL80211_RATE_INFO_EHT_NSS                               = C.NL80211_RATE_INFO_EHT_NSS
+	NL80211_RATE_INFO_EHT_RU_ALLOC_106                      = C.NL80211_RATE_INFO_EHT_RU_ALLOC_106
+	NL80211_RATE_INFO_EHT_RU_ALLOC_106P26                   = C.NL80211_RATE_INFO_EHT_RU_ALLOC_106P26
+	NL80211_RATE_INFO_EHT_RU_ALLOC_242                      = C.NL80211_RATE_INFO_EHT_RU_ALLOC_242
+	NL80211_RATE_INFO_EHT_RU_ALLOC_26                       = C.NL80211_RATE_INFO_EHT_RU_ALLOC_26
+	NL80211_RATE_INFO_EHT_RU_ALLOC_2x996                    = C.NL80211_RATE_INFO_EHT_RU_ALLOC_2x996
+	NL80211_RATE_INFO_EHT_RU_ALLOC_2x996P484                = C.NL80211_RATE_INFO_EHT_RU_ALLOC_2x996P484
+	NL80211_RATE_INFO_EHT_RU_ALLOC_3x996                    = C.NL80211_RATE_INFO_EHT_RU_ALLOC_3x996
+	NL80211_RATE_INFO_EHT_RU_ALLOC_3x996P484                = C.NL80211_RATE_INFO_EHT_RU_ALLOC_3x996P484
+	NL80211_RATE_INFO_EHT_RU_ALLOC_484                      = C.NL80211_RATE_INFO_EHT_RU_ALLOC_484
+	NL80211_RATE_INFO_EHT_RU_ALLOC_484P242                  = C.NL80211_RATE_INFO_EHT_RU_ALLOC_484P242
+	NL80211_RATE_INFO_EHT_RU_ALLOC_4x996                    = C.NL80211_RATE_INFO_EHT_RU_ALLOC_4x996
+	NL80211_RATE_INFO_EHT_RU_ALLOC_52                       = C.NL80211_RATE_INFO_EHT_RU_ALLOC_52
+	NL80211_RATE_INFO_EHT_RU_ALLOC_52P26                    = C.NL80211_RATE_INFO_EHT_RU_ALLOC_52P26
+	NL80211_RATE_INFO_EHT_RU_ALLOC_996                      = C.NL80211_RATE_INFO_EHT_RU_ALLOC_996
+	NL80211_RATE_INFO_EHT_RU_ALLOC_996P484                  = C.NL80211_RATE_INFO_EHT_RU_ALLOC_996P484
+	NL80211_RATE_INFO_EHT_RU_ALLOC_996P484P242              = C.NL80211_RATE_INFO_EHT_RU_ALLOC_996P484P242
+	NL80211_RATE_INFO_EHT_RU_ALLOC                          = C.NL80211_RATE_INFO_EHT_RU_ALLOC
+	NL80211_RATE_INFO_HE_1XLTF                              = C.NL80211_RATE_INFO_HE_1XLTF
+	NL80211_RATE_INFO_HE_2XLTF                              = C.NL80211_RATE_INFO_HE_2XLTF
+	NL80211_RATE_INFO_HE_4XLTF                              = C.NL80211_RATE_INFO_HE_4XLTF
+	NL80211_RATE_INFO_HE_DCM                                = C.NL80211_RATE_INFO_HE_DCM
+	NL80211_RATE_INFO_HE_GI_0_8                             = C.NL80211_RATE_INFO_HE_GI_0_8
+	NL80211_RATE_INFO_HE_GI_1_6                             = C.NL80211_RATE_INFO_HE_GI_1_6
+	NL80211_RATE_INFO_HE_GI_3_2                             = C.NL80211_RATE_INFO_HE_GI_3_2
+	NL80211_RATE_INFO_HE_GI                                 = C.NL80211_RATE_INFO_HE_GI
+	NL80211_RATE_INFO_HE_MCS                                = C.NL80211_RATE_INFO_HE_MCS
+	NL80211_RATE_INFO_HE_NSS                                = C.NL80211_RATE_INFO_HE_NSS
+	NL80211_RATE_INFO_HE_RU_ALLOC_106                       = C.NL80211_RATE_INFO_HE_RU_ALLOC_106
+	NL80211_RATE_INFO_HE_RU_ALLOC_242                       = C.NL80211_RATE_INFO_HE_RU_ALLOC_242
+	NL80211_RATE_INFO_HE_RU_ALLOC_26                        = C.NL80211_RATE_INFO_HE_RU_ALLOC_26
+	NL80211_RATE_INFO_HE_RU_ALLOC_2x996                     = C.NL80211_RATE_INFO_HE_RU_ALLOC_2x996
+	NL80211_RATE_INFO_HE_RU_ALLOC_484                       = C.NL80211_RATE_INFO_HE_RU_ALLOC_484
+	NL80211_RATE_INFO_HE_RU_ALLOC_52                        = C.NL80211_RATE_INFO_HE_RU_ALLOC_52
+	NL80211_RATE_INFO_HE_RU_ALLOC_996                       = C.NL80211_RATE_INFO_HE_RU_ALLOC_996
+	NL80211_RATE_INFO_HE_RU_ALLOC                           = C.NL80211_RATE_INFO_HE_RU_ALLOC
+	NL80211_RATE_INFO_MAX                                   = C.NL80211_RATE_INFO_MAX
+	NL80211_RATE_INFO_MCS                                   = C.NL80211_RATE_INFO_MCS
+	NL80211_RATE_INFO_SHORT_GI                              = C.NL80211_RATE_INFO_SHORT_GI
+	NL80211_RATE_INFO_VHT_MCS                               = C.NL80211_RATE_INFO_VHT_MCS
+	NL80211_RATE_INFO_VHT_NSS                               = C.NL80211_RATE_INFO_VHT_NSS
+	NL80211_REGDOM_SET_BY_CORE                              = C.NL80211_REGDOM_SET_BY_CORE
+	NL80211_REGDOM_SET_BY_COUNTRY_IE                        = C.NL80211_REGDOM_SET_BY_COUNTRY_IE
+	NL80211_REGDOM_SET_BY_DRIVER                            = C.NL80211_REGDOM_SET_BY_DRIVER
+	NL80211_REGDOM_SET_BY_USER                              = C.NL80211_REGDOM_SET_BY_USER
+	NL80211_REGDOM_TYPE_COUNTRY                             = C.NL80211_REGDOM_TYPE_COUNTRY
+	NL80211_REGDOM_TYPE_CUSTOM_WORLD                        = C.NL80211_REGDOM_TYPE_CUSTOM_WORLD
+	NL80211_REGDOM_TYPE_INTERSECTION                        = C.NL80211_REGDOM_TYPE_INTERSECTION
+	NL80211_REGDOM_TYPE_WORLD                               = C.NL80211_REGDOM_TYPE_WORLD
+	NL80211_REG_RULE_ATTR_MAX                               = C.NL80211_REG_RULE_ATTR_MAX
+	NL80211_REKEY_DATA_AKM                                  = C.NL80211_REKEY_DATA_AKM
+	NL80211_REKEY_DATA_KCK                                  = C.NL80211_REKEY_DATA_KCK
+	NL80211_REKEY_DATA_KEK                                  = C.NL80211_REKEY_DATA_KEK
+	NL80211_REKEY_DATA_REPLAY_CTR                           = C.NL80211_REKEY_DATA_REPLAY_CTR
+	NL80211_REPLAY_CTR_LEN                                  = C.NL80211_REPLAY_CTR_LEN
+	NL80211_RRF_AUTO_BW                                     = C.NL80211_RRF_AUTO_BW
+	NL80211_RRF_DFS                                         = C.NL80211_RRF_DFS
+	NL80211_RRF_GO_CONCURRENT                               = C.NL80211_RRF_GO_CONCURRENT
+	NL80211_RRF_IR_CONCURRENT                               = C.NL80211_RRF_IR_CONCURRENT
+	NL80211_RRF_NO_160MHZ                                   = C.NL80211_RRF_NO_160MHZ
+	NL80211_RRF_NO_320MHZ                                   = C.NL80211_RRF_NO_320MHZ
+	NL80211_RRF_NO_80MHZ                                    = C.NL80211_RRF_NO_80MHZ
+	NL80211_RRF_NO_CCK                                      = C.NL80211_RRF_NO_CCK
+	NL80211_RRF_NO_HE                                       = C.NL80211_RRF_NO_HE
+	NL80211_RRF_NO_HT40                                     = C.NL80211_RRF_NO_HT40
+	NL80211_RRF_NO_HT40MINUS                                = C.NL80211_RRF_NO_HT40MINUS
+	NL80211_RRF_NO_HT40PLUS                                 = C.NL80211_RRF_NO_HT40PLUS
+	NL80211_RRF_NO_IBSS                                     = C.NL80211_RRF_NO_IBSS
+	NL80211_RRF_NO_INDOOR                                   = C.NL80211_RRF_NO_INDOOR
+	NL80211_RRF_NO_IR_ALL                                   = C.NL80211_RRF_NO_IR_ALL
+	NL80211_RRF_NO_IR                                       = C.NL80211_RRF_NO_IR
+	NL80211_RRF_NO_OFDM                                     = C.NL80211_RRF_NO_OFDM
+	NL80211_RRF_NO_OUTDOOR                                  = C.NL80211_RRF_NO_OUTDOOR
+	NL80211_RRF_PASSIVE_SCAN                                = C.NL80211_RRF_PASSIVE_SCAN
+	NL80211_RRF_PTMP_ONLY                                   = C.NL80211_RRF_PTMP_ONLY
+	NL80211_RRF_PTP_ONLY                                    = C.NL80211_RRF_PTP_ONLY
+	NL80211_RXMGMT_FLAG_ANSWERED                            = C.NL80211_RXMGMT_FLAG_ANSWERED
+	NL80211_RXMGMT_FLAG_EXTERNAL_AUTH                       = C.NL80211_RXMGMT_FLAG_EXTERNAL_AUTH
+	NL80211_SAE_PWE_BOTH                                    = C.NL80211_SAE_PWE_BOTH
+	NL80211_SAE_PWE_HASH_TO_ELEMENT                         = C.NL80211_SAE_PWE_HASH_TO_ELEMENT
+	NL80211_SAE_PWE_HUNT_AND_PECK                           = C.NL80211_SAE_PWE_HUNT_AND_PECK
+	NL80211_SAE_PWE_UNSPECIFIED                             = C.NL80211_SAE_PWE_UNSPECIFIED
+	NL80211_SAR_ATTR_MAX                                    = C.NL80211_SAR_ATTR_MAX
+	NL80211_SAR_ATTR_SPECS                                  = C.NL80211_SAR_ATTR_SPECS
+	NL80211_SAR_ATTR_SPECS_END_FREQ                         = C.NL80211_SAR_ATTR_SPECS_END_FREQ
+	NL80211_SAR_ATTR_SPECS_MAX                              = C.NL80211_SAR_ATTR_SPECS_MAX
+	NL80211_SAR_ATTR_SPECS_POWER                            = C.NL80211_SAR_ATTR_SPECS_POWER
+	NL80211_SAR_ATTR_SPECS_RANGE_INDEX                      = C.NL80211_SAR_ATTR_SPECS_RANGE_INDEX
+	NL80211_SAR_ATTR_SPECS_START_FREQ                       = C.NL80211_SAR_ATTR_SPECS_START_FREQ
+	NL80211_SAR_ATTR_TYPE                                   = C.NL80211_SAR_ATTR_TYPE
+	NL80211_SAR_TYPE_POWER                                  = C.NL80211_SAR_TYPE_POWER
+	NL80211_SCAN_FLAG_ACCEPT_BCAST_PROBE_RESP               = C.NL80211_SCAN_FLAG_ACCEPT_BCAST_PROBE_RESP
+	NL80211_SCAN_FLAG_AP                                    = C.NL80211_SCAN_FLAG_AP
+	NL80211_SCAN_FLAG_COLOCATED_6GHZ                        = C.NL80211_SCAN_FLAG_COLOCATED_6GHZ
+	NL80211_SCAN_FLAG_FILS_MAX_CHANNEL_TIME                 = C.NL80211_SCAN_FLAG_FILS_MAX_CHANNEL_TIME
+	NL80211_SCAN_FLAG_FLUSH                                 = C.NL80211_SCAN_FLAG_FLUSH
+	NL80211_SCAN_FLAG_FREQ_KHZ                              = C.NL80211_SCAN_FLAG_FREQ_KHZ
+	NL80211_SCAN_FLAG_HIGH_ACCURACY                         = C.NL80211_SCAN_FLAG_HIGH_ACCURACY
+	NL80211_SCAN_FLAG_LOW_POWER                             = C.NL80211_SCAN_FLAG_LOW_POWER
+	NL80211_SCAN_FLAG_LOW_PRIORITY                          = C.NL80211_SCAN_FLAG_LOW_PRIORITY
+	NL80211_SCAN_FLAG_LOW_SPAN                              = C.NL80211_SCAN_FLAG_LOW_SPAN
+	NL80211_SCAN_FLAG_MIN_PREQ_CONTENT                      = C.NL80211_SCAN_FLAG_MIN_PREQ_CONTENT
+	NL80211_SCAN_FLAG_OCE_PROBE_REQ_DEFERRAL_SUPPRESSION    = C.NL80211_SCAN_FLAG_OCE_PROBE_REQ_DEFERRAL_SUPPRESSION
+	NL80211_SCAN_FLAG_OCE_PROBE_REQ_HIGH_TX_RATE            = C.NL80211_SCAN_FLAG_OCE_PROBE_REQ_HIGH_TX_RATE
+	NL80211_SCAN_FLAG_RANDOM_ADDR                           = C.NL80211_SCAN_FLAG_RANDOM_ADDR
+	NL80211_SCAN_FLAG_RANDOM_SN                             = C.NL80211_SCAN_FLAG_RANDOM_SN
+	NL80211_SCAN_RSSI_THOLD_OFF                             = C.NL80211_SCAN_RSSI_THOLD_OFF
+	NL80211_SCHED_SCAN_MATCH_ATTR_BSSID                     = C.NL80211_SCHED_SCAN_MATCH_ATTR_BSSID
+	NL80211_SCHED_SCAN_MATCH_ATTR_MAX                       = C.NL80211_SCHED_SCAN_MATCH_ATTR_MAX
+	NL80211_SCHED_SCAN_MATCH_ATTR_RELATIVE_RSSI             = C.NL80211_SCHED_SCAN_MATCH_ATTR_RELATIVE_RSSI
+	NL80211_SCHED_SCAN_MATCH_ATTR_RSSI_ADJUST               = C.NL80211_SCHED_SCAN_MATCH_ATTR_RSSI_ADJUST
+	NL80211_SCHED_SCAN_MATCH_ATTR_RSSI                      = C.NL80211_SCHED_SCAN_MATCH_ATTR_RSSI
+	NL80211_SCHED_SCAN_MATCH_ATTR_SSID                      = C.NL80211_SCHED_SCAN_MATCH_ATTR_SSID
+	NL80211_SCHED_SCAN_MATCH_PER_BAND_RSSI                  = C.NL80211_SCHED_SCAN_MATCH_PER_BAND_RSSI
+	NL80211_SCHED_SCAN_PLAN_INTERVAL                        = C.NL80211_SCHED_SCAN_PLAN_INTERVAL
+	NL80211_SCHED_SCAN_PLAN_ITERATIONS                      = C.NL80211_SCHED_SCAN_PLAN_ITERATIONS
+	NL80211_SCHED_SCAN_PLAN_MAX                             = C.NL80211_SCHED_SCAN_PLAN_MAX
+	NL80211_SMPS_DYNAMIC                                    = C.NL80211_SMPS_DYNAMIC
+	NL80211_SMPS_MAX                                        = C.NL80211_SMPS_MAX
+	NL80211_SMPS_OFF                                        = C.NL80211_SMPS_OFF
+	NL80211_SMPS_STATIC                                     = C.NL80211_SMPS_STATIC
+	NL80211_STA_BSS_PARAM_BEACON_INTERVAL                   = C.NL80211_STA_BSS_PARAM_BEACON_INTERVAL
+	NL80211_STA_BSS_PARAM_CTS_PROT                          = C.NL80211_STA_BSS_PARAM_CTS_PROT
+	NL80211_STA_BSS_PARAM_DTIM_PERIOD                       = C.NL80211_STA_BSS_PARAM_DTIM_PERIOD
+	NL80211_STA_BSS_PARAM_MAX                               = C.NL80211_STA_BSS_PARAM_MAX
+	NL80211_STA_BSS_PARAM_SHORT_PREAMBLE                    = C.NL80211_STA_BSS_PARAM_SHORT_PREAMBLE
+	NL80211_STA_BSS_PARAM_SHORT_SLOT_TIME                   = C.NL80211_STA_BSS_PARAM_SHORT_SLOT_TIME
+	NL80211_STA_FLAG_ASSOCIATED                             = C.NL80211_STA_FLAG_ASSOCIATED
+	NL80211_STA_FLAG_AUTHENTICATED                          = C.NL80211_STA_FLAG_AUTHENTICATED
+	NL80211_STA_FLAG_AUTHORIZED                             = C.NL80211_STA_FLAG_AUTHORIZED
+	NL80211_STA_FLAG_MAX                                    = C.NL80211_STA_FLAG_MAX
+	NL80211_STA_FLAG_MAX_OLD_API                            = C.NL80211_STA_FLAG_MAX_OLD_API
+	NL80211_STA_FLAG_MFP                                    = C.NL80211_STA_FLAG_MFP
+	NL80211_STA_FLAG_SHORT_PREAMBLE                         = C.NL80211_STA_FLAG_SHORT_PREAMBLE
+	NL80211_STA_FLAG_TDLS_PEER                              = C.NL80211_STA_FLAG_TDLS_PEER
+	NL80211_STA_FLAG_WME                                    = C.NL80211_STA_FLAG_WME
+	NL80211_STA_INFO_ACK_SIGNAL_AVG                         = C.NL80211_STA_INFO_ACK_SIGNAL_AVG
+	NL80211_STA_INFO_ACK_SIGNAL                             = C.NL80211_STA_INFO_ACK_SIGNAL
+	NL80211_STA_INFO_AIRTIME_LINK_METRIC                    = C.NL80211_STA_INFO_AIRTIME_LINK_METRIC
+	NL80211_STA_INFO_AIRTIME_WEIGHT                         = C.NL80211_STA_INFO_AIRTIME_WEIGHT
+	NL80211_STA_INFO_ASSOC_AT_BOOTTIME                      = C.NL80211_STA_INFO_ASSOC_AT_BOOTTIME
+	NL80211_STA_INFO_BEACON_LOSS                            = C.NL80211_STA_INFO_BEACON_LOSS
+	NL80211_STA_INFO_BEACON_RX                              = C.NL80211_STA_INFO_BEACON_RX
+	NL80211_STA_INFO_BEACON_SIGNAL_AVG                      = C.NL80211_STA_INFO_BEACON_SIGNAL_AVG
+	NL80211_STA_INFO_BSS_PARAM                              = C.NL80211_STA_INFO_BSS_PARAM
+	NL80211_STA_INFO_CHAIN_SIGNAL_AVG                       = C.NL80211_STA_INFO_CHAIN_SIGNAL_AVG
+	NL80211_STA_INFO_CHAIN_SIGNAL                           = C.NL80211_STA_INFO_CHAIN_SIGNAL
+	NL80211_STA_INFO_CONNECTED_TIME                         = C.NL80211_STA_INFO_CONNECTED_TIME
+	NL80211_STA_INFO_CONNECTED_TO_AS                        = C.NL80211_STA_INFO_CONNECTED_TO_AS
+	NL80211_STA_INFO_CONNECTED_TO_GATE                      = C.NL80211_STA_INFO_CONNECTED_TO_GATE
+	NL80211_STA_INFO_DATA_ACK_SIGNAL_AVG                    = C.NL80211_STA_INFO_DATA_ACK_SIGNAL_AVG
+	NL80211_STA_INFO_EXPECTED_THROUGHPUT                    = C.NL80211_STA_INFO_EXPECTED_THROUGHPUT
+	NL80211_STA_INFO_FCS_ERROR_COUNT                        = C.NL80211_STA_INFO_FCS_ERROR_COUNT
+	NL80211_STA_INFO_INACTIVE_TIME                          = C.NL80211_STA_INFO_INACTIVE_TIME
+	NL80211_STA_INFO_LLID                                   = C.NL80211_STA_INFO_LLID
+	NL80211_STA_INFO_LOCAL_PM                               = C.NL80211_STA_INFO_LOCAL_PM
+	NL80211_STA_INFO_MAX                                    = C.NL80211_STA_INFO_MAX
+	NL80211_STA_INFO_NONPEER_PM                             = C.NL80211_STA_INFO_NONPEER_PM
+	NL80211_STA_INFO_PAD                                    = C.NL80211_STA_INFO_PAD
+	NL80211_STA_INFO_PEER_PM                                = C.NL80211_STA_INFO_PEER_PM
+	NL80211_STA_INFO_PLID                                   = C.NL80211_STA_INFO_PLID
+	NL80211_STA_INFO_PLINK_STATE                            = C.NL80211_STA_INFO_PLINK_STATE
+	NL80211_STA_INFO_RX_BITRATE                             = C.NL80211_STA_INFO_RX_BITRATE
+	NL80211_STA_INFO_RX_BYTES64                             = C.NL80211_STA_INFO_RX_BYTES64
+	NL80211_STA_INFO_RX_BYTES                               = C.NL80211_STA_INFO_RX_BYTES
+	NL80211_STA_INFO_RX_DROP_MISC                           = C.NL80211_STA_INFO_RX_DROP_MISC
+	NL80211_STA_INFO_RX_DURATION                            = C.NL80211_STA_INFO_RX_DURATION
+	NL80211_STA_INFO_RX_MPDUS                               = C.NL80211_STA_INFO_RX_MPDUS
+	NL80211_STA_INFO_RX_PACKETS                             = C.NL80211_STA_INFO_RX_PACKETS
+	NL80211_STA_INFO_SIGNAL_AVG                             = C.NL80211_STA_INFO_SIGNAL_AVG
+	NL80211_STA_INFO_SIGNAL                                 = C.NL80211_STA_INFO_SIGNAL
+	NL80211_STA_INFO_STA_FLAGS                              = C.NL80211_STA_INFO_STA_FLAGS
+	NL80211_STA_INFO_TID_STATS                              = C.NL80211_STA_INFO_TID_STATS
+	NL80211_STA_INFO_T_OFFSET                               = C.NL80211_STA_INFO_T_OFFSET
+	NL80211_STA_INFO_TX_BITRATE                             = C.NL80211_STA_INFO_TX_BITRATE
+	NL80211_STA_INFO_TX_BYTES64                             = C.NL80211_STA_INFO_TX_BYTES64
+	NL80211_STA_INFO_TX_BYTES                               = C.NL80211_STA_INFO_TX_BYTES
+	NL80211_STA_INFO_TX_DURATION                            = C.NL80211_STA_INFO_TX_DURATION
+	NL80211_STA_INFO_TX_FAILED                              = C.NL80211_STA_INFO_TX_FAILED
+	NL80211_STA_INFO_TX_PACKETS                             = C.NL80211_STA_INFO_TX_PACKETS
+	NL80211_STA_INFO_TX_RETRIES                             = C.NL80211_STA_INFO_TX_RETRIES
+	NL80211_STA_WME_MAX                                     = C.NL80211_STA_WME_MAX
+	NL80211_STA_WME_MAX_SP                                  = C.NL80211_STA_WME_MAX_SP
+	NL80211_STA_WME_UAPSD_QUEUES                            = C.NL80211_STA_WME_UAPSD_QUEUES
+	NL80211_SURVEY_INFO_CHANNEL_TIME_BUSY                   = C.NL80211_SURVEY_INFO_CHANNEL_TIME_BUSY
+	NL80211_SURVEY_INFO_CHANNEL_TIME                        = C.NL80211_SURVEY_INFO_CHANNEL_TIME
+	NL80211_SURVEY_INFO_CHANNEL_TIME_EXT_BUSY               = C.NL80211_SURVEY_INFO_CHANNEL_TIME_EXT_BUSY
+	NL80211_SURVEY_INFO_CHANNEL_TIME_RX                     = C.NL80211_SURVEY_INFO_CHANNEL_TIME_RX
+	NL80211_SURVEY_INFO_CHANNEL_TIME_TX                     = C.NL80211_SURVEY_INFO_CHANNEL_TIME_TX
+	NL80211_SURVEY_INFO_FREQUENCY                           = C.NL80211_SURVEY_INFO_FREQUENCY
+	NL80211_SURVEY_INFO_FREQUENCY_OFFSET                    = C.NL80211_SURVEY_INFO_FREQUENCY_OFFSET
+	NL80211_SURVEY_INFO_IN_USE                              = C.NL80211_SURVEY_INFO_IN_USE
+	NL80211_SURVEY_INFO_MAX                                 = C.NL80211_SURVEY_INFO_MAX
+	NL80211_SURVEY_INFO_NOISE                               = C.NL80211_SURVEY_INFO_NOISE
+	NL80211_SURVEY_INFO_PAD                                 = C.NL80211_SURVEY_INFO_PAD
+	NL80211_SURVEY_INFO_TIME_BSS_RX                         = C.NL80211_SURVEY_INFO_TIME_BSS_RX
+	NL80211_SURVEY_INFO_TIME_BUSY                           = C.NL80211_SURVEY_INFO_TIME_BUSY
+	NL80211_SURVEY_INFO_TIME                                = C.NL80211_SURVEY_INFO_TIME
+	NL80211_SURVEY_INFO_TIME_EXT_BUSY                       = C.NL80211_SURVEY_INFO_TIME_EXT_BUSY
+	NL80211_SURVEY_INFO_TIME_RX                             = C.NL80211_SURVEY_INFO_TIME_RX
+	NL80211_SURVEY_INFO_TIME_SCAN                           = C.NL80211_SURVEY_INFO_TIME_SCAN
+	NL80211_SURVEY_INFO_TIME_TX                             = C.NL80211_SURVEY_INFO_TIME_TX
+	NL80211_TDLS_DISABLE_LINK                               = C.NL80211_TDLS_DISABLE_LINK
+	NL80211_TDLS_DISCOVERY_REQ                              = C.NL80211_TDLS_DISCOVERY_REQ
+	NL80211_TDLS_ENABLE_LINK                                = C.NL80211_TDLS_ENABLE_LINK
+	NL80211_TDLS_PEER_HE                                    = C.NL80211_TDLS_PEER_HE
+	NL80211_TDLS_PEER_HT                                    = C.NL80211_TDLS_PEER_HT
+	NL80211_TDLS_PEER_VHT                                   = C.NL80211_TDLS_PEER_VHT
+	NL80211_TDLS_PEER_WMM                                   = C.NL80211_TDLS_PEER_WMM
+	NL80211_TDLS_SETUP                                      = C.NL80211_TDLS_SETUP
+	NL80211_TDLS_TEARDOWN                                   = C.NL80211_TDLS_TEARDOWN
+	NL80211_TID_CONFIG_ATTR_AMPDU_CTRL                      = C.NL80211_TID_CONFIG_ATTR_AMPDU_CTRL
+	NL80211_TID_CONFIG_ATTR_AMSDU_CTRL                      = C.NL80211_TID_CONFIG_ATTR_AMSDU_CTRL
+	NL80211_TID_CONFIG_ATTR_MAX                             = C.NL80211_TID_CONFIG_ATTR_MAX
+	NL80211_TID_CONFIG_ATTR_NOACK                           = C.NL80211_TID_CONFIG_ATTR_NOACK
+	NL80211_TID_CONFIG_ATTR_OVERRIDE                        = C.NL80211_TID_CONFIG_ATTR_OVERRIDE
+	NL80211_TID_CONFIG_ATTR_PAD                             = C.NL80211_TID_CONFIG_ATTR_PAD
+	NL80211_TID_CONFIG_ATTR_PEER_SUPP                       = C.NL80211_TID_CONFIG_ATTR_PEER_SUPP
+	NL80211_TID_CONFIG_ATTR_RETRY_LONG                      = C.NL80211_TID_CONFIG_ATTR_RETRY_LONG
+	NL80211_TID_CONFIG_ATTR_RETRY_SHORT                     = C.NL80211_TID_CONFIG_ATTR_RETRY_SHORT
+	NL80211_TID_CONFIG_ATTR_RTSCTS_CTRL                     = C.NL80211_TID_CONFIG_ATTR_RTSCTS_CTRL
+	NL80211_TID_CONFIG_ATTR_TIDS                            = C.NL80211_TID_CONFIG_ATTR_TIDS
+	NL80211_TID_CONFIG_ATTR_TX_RATE                         = C.NL80211_TID_CONFIG_ATTR_TX_RATE
+	NL80211_TID_CONFIG_ATTR_TX_RATE_TYPE                    = C.NL80211_TID_CONFIG_ATTR_TX_RATE_TYPE
+	NL80211_TID_CONFIG_ATTR_VIF_SUPP                        = C.NL80211_TID_CONFIG_ATTR_VIF_SUPP
+	NL80211_TID_CONFIG_DISABLE                              = C.NL80211_TID_CONFIG_DISABLE
+	NL80211_TID_CONFIG_ENABLE                               = C.NL80211_TID_CONFIG_ENABLE
+	NL80211_TID_STATS_MAX                                   = C.NL80211_TID_STATS_MAX
+	NL80211_TID_STATS_PAD                                   = C.NL80211_TID_STATS_PAD
+	NL80211_TID_STATS_RX_MSDU                               = C.NL80211_TID_STATS_RX_MSDU
+	NL80211_TID_STATS_TX_MSDU                               = C.NL80211_TID_STATS_TX_MSDU
+	NL80211_TID_STATS_TX_MSDU_FAILED                        = C.NL80211_TID_STATS_TX_MSDU_FAILED
+	NL80211_TID_STATS_TX_MSDU_RETRIES                       = C.NL80211_TID_STATS_TX_MSDU_RETRIES
+	NL80211_TID_STATS_TXQ_STATS                             = C.NL80211_TID_STATS_TXQ_STATS
+	NL80211_TIMEOUT_ASSOC                                   = C.NL80211_TIMEOUT_ASSOC
+	NL80211_TIMEOUT_AUTH                                    = C.NL80211_TIMEOUT_AUTH
+	NL80211_TIMEOUT_SCAN                                    = C.NL80211_TIMEOUT_SCAN
+	NL80211_TIMEOUT_UNSPECIFIED                             = C.NL80211_TIMEOUT_UNSPECIFIED
+	NL80211_TKIP_DATA_OFFSET_ENCR_KEY                       = C.NL80211_TKIP_DATA_OFFSET_ENCR_KEY
+	NL80211_TKIP_DATA_OFFSET_RX_MIC_KEY                     = C.NL80211_TKIP_DATA_OFFSET_RX_MIC_KEY
+	NL80211_TKIP_DATA_OFFSET_TX_MIC_KEY                     = C.NL80211_TKIP_DATA_OFFSET_TX_MIC_KEY
+	NL80211_TX_POWER_AUTOMATIC                              = C.NL80211_TX_POWER_AUTOMATIC
+	NL80211_TX_POWER_FIXED                                  = C.NL80211_TX_POWER_FIXED
+	NL80211_TX_POWER_LIMITED                                = C.NL80211_TX_POWER_LIMITED
+	NL80211_TXQ_ATTR_AC                                     = C.NL80211_TXQ_ATTR_AC
+	NL80211_TXQ_ATTR_AIFS                                   = C.NL80211_TXQ_ATTR_AIFS
+	NL80211_TXQ_ATTR_CWMAX                                  = C.NL80211_TXQ_ATTR_CWMAX
+	NL80211_TXQ_ATTR_CWMIN                                  = C.NL80211_TXQ_ATTR_CWMIN
+	NL80211_TXQ_ATTR_MAX                                    = C.NL80211_TXQ_ATTR_MAX
+	NL80211_TXQ_ATTR_QUEUE                                  = C.NL80211_TXQ_ATTR_QUEUE
+	NL80211_TXQ_ATTR_TXOP                                   = C.NL80211_TXQ_ATTR_TXOP
+	NL80211_TXQ_Q_BE                                        = C.NL80211_TXQ_Q_BE
+	NL80211_TXQ_Q_BK                                        = C.NL80211_TXQ_Q_BK
+	NL80211_TXQ_Q_VI                                        = C.NL80211_TXQ_Q_VI
+	NL80211_TXQ_Q_VO                                        = C.NL80211_TXQ_Q_VO
+	NL80211_TXQ_STATS_BACKLOG_BYTES                         = C.NL80211_TXQ_STATS_BACKLOG_BYTES
+	NL80211_TXQ_STATS_BACKLOG_PACKETS                       = C.NL80211_TXQ_STATS_BACKLOG_PACKETS
+	NL80211_TXQ_STATS_COLLISIONS                            = C.NL80211_TXQ_STATS_COLLISIONS
+	NL80211_TXQ_STATS_DROPS                                 = C.NL80211_TXQ_STATS_DROPS
+	NL80211_TXQ_STATS_ECN_MARKS                             = C.NL80211_TXQ_STATS_ECN_MARKS
+	NL80211_TXQ_STATS_FLOWS                                 = C.NL80211_TXQ_STATS_FLOWS
+	NL80211_TXQ_STATS_MAX                                   = C.NL80211_TXQ_STATS_MAX
+	NL80211_TXQ_STATS_MAX_FLOWS                             = C.NL80211_TXQ_STATS_MAX_FLOWS
+	NL80211_TXQ_STATS_OVERLIMIT                             = C.NL80211_TXQ_STATS_OVERLIMIT
+	NL80211_TXQ_STATS_OVERMEMORY                            = C.NL80211_TXQ_STATS_OVERMEMORY
+	NL80211_TXQ_STATS_TX_BYTES                              = C.NL80211_TXQ_STATS_TX_BYTES
+	NL80211_TXQ_STATS_TX_PACKETS                            = C.NL80211_TXQ_STATS_TX_PACKETS
+	NL80211_TX_RATE_AUTOMATIC                               = C.NL80211_TX_RATE_AUTOMATIC
+	NL80211_TXRATE_DEFAULT_GI                               = C.NL80211_TXRATE_DEFAULT_GI
+	NL80211_TX_RATE_FIXED                                   = C.NL80211_TX_RATE_FIXED
+	NL80211_TXRATE_FORCE_LGI                                = C.NL80211_TXRATE_FORCE_LGI
+	NL80211_TXRATE_FORCE_SGI                                = C.NL80211_TXRATE_FORCE_SGI
+	NL80211_TXRATE_GI                                       = C.NL80211_TXRATE_GI
+	NL80211_TXRATE_HE                                       = C.NL80211_TXRATE_HE
+	NL80211_TXRATE_HE_GI                                    = C.NL80211_TXRATE_HE_GI
+	NL80211_TXRATE_HE_LTF                                   = C.NL80211_TXRATE_HE_LTF
+	NL80211_TXRATE_HT                                       = C.NL80211_TXRATE_HT
+	NL80211_TXRATE_LEGACY                                   = C.NL80211_TXRATE_LEGACY
+	NL80211_TX_RATE_LIMITED                                 = C.NL80211_TX_RATE_LIMITED
+	NL80211_TXRATE_MAX                                      = C.NL80211_TXRATE_MAX
+	NL80211_TXRATE_MCS                                      = C.NL80211_TXRATE_MCS
+	NL80211_TXRATE_VHT                                      = C.NL80211_TXRATE_VHT
+	NL80211_UNSOL_BCAST_PROBE_RESP_ATTR_INT                 = C.NL80211_UNSOL_BCAST_PROBE_RESP_ATTR_INT
+	NL80211_UNSOL_BCAST_PROBE_RESP_ATTR_MAX                 = C.NL80211_UNSOL_BCAST_PROBE_RESP_ATTR_MAX
+	NL80211_UNSOL_BCAST_PROBE_RESP_ATTR_TMPL                = C.NL80211_UNSOL_BCAST_PROBE_RESP_ATTR_TMPL
+	NL80211_USER_REG_HINT_CELL_BASE                         = C.NL80211_USER_REG_HINT_CELL_BASE
+	NL80211_USER_REG_HINT_INDOOR                            = C.NL80211_USER_REG_HINT_INDOOR
+	NL80211_USER_REG_HINT_USER                              = C.NL80211_USER_REG_HINT_USER
+	NL80211_VENDOR_ID_IS_LINUX                              = C.NL80211_VENDOR_ID_IS_LINUX
+	NL80211_VHT_CAPABILITY_LEN                              = C.NL80211_VHT_CAPABILITY_LEN
+	NL80211_VHT_NSS_MAX                                     = C.NL80211_VHT_NSS_MAX
+	NL80211_WIPHY_NAME_MAXLEN                               = C.NL80211_WIPHY_NAME_MAXLEN
+	NL80211_WMMR_AIFSN                                      = C.NL80211_WMMR_AIFSN
+	NL80211_WMMR_CW_MAX                                     = C.NL80211_WMMR_CW_MAX
+	NL80211_WMMR_CW_MIN                                     = C.NL80211_WMMR_CW_MIN
+	NL80211_WMMR_MAX                                        = C.NL80211_WMMR_MAX
+	NL80211_WMMR_TXOP                                       = C.NL80211_WMMR_TXOP
+	NL80211_WOWLAN_PKTPAT_MASK                              = C.NL80211_WOWLAN_PKTPAT_MASK
+	NL80211_WOWLAN_PKTPAT_OFFSET                            = C.NL80211_WOWLAN_PKTPAT_OFFSET
+	NL80211_WOWLAN_PKTPAT_PATTERN                           = C.NL80211_WOWLAN_PKTPAT_PATTERN
+	NL80211_WOWLAN_TCP_DATA_INTERVAL                        = C.NL80211_WOWLAN_TCP_DATA_INTERVAL
+	NL80211_WOWLAN_TCP_DATA_PAYLOAD                         = C.NL80211_WOWLAN_TCP_DATA_PAYLOAD
+	NL80211_WOWLAN_TCP_DATA_PAYLOAD_SEQ                     = C.NL80211_WOWLAN_TCP_DATA_PAYLOAD_SEQ
+	NL80211_WOWLAN_TCP_DATA_PAYLOAD_TOKEN                   = C.NL80211_WOWLAN_TCP_DATA_PAYLOAD_TOKEN
+	NL80211_WOWLAN_TCP_DST_IPV4                             = C.NL80211_WOWLAN_TCP_DST_IPV4
+	NL80211_WOWLAN_TCP_DST_MAC                              = C.NL80211_WOWLAN_TCP_DST_MAC
+	NL80211_WOWLAN_TCP_DST_PORT                             = C.NL80211_WOWLAN_TCP_DST_PORT
+	NL80211_WOWLAN_TCP_SRC_IPV4                             = C.NL80211_WOWLAN_TCP_SRC_IPV4
+	NL80211_WOWLAN_TCP_SRC_PORT                             = C.NL80211_WOWLAN_TCP_SRC_PORT
+	NL80211_WOWLAN_TCP_WAKE_MASK                            = C.NL80211_WOWLAN_TCP_WAKE_MASK
+	NL80211_WOWLAN_TCP_WAKE_PAYLOAD                         = C.NL80211_WOWLAN_TCP_WAKE_PAYLOAD
+	NL80211_WOWLAN_TRIG_4WAY_HANDSHAKE                      = C.NL80211_WOWLAN_TRIG_4WAY_HANDSHAKE
+	NL80211_WOWLAN_TRIG_ANY                                 = C.NL80211_WOWLAN_TRIG_ANY
+	NL80211_WOWLAN_TRIG_DISCONNECT                          = C.NL80211_WOWLAN_TRIG_DISCONNECT
+	NL80211_WOWLAN_TRIG_EAP_IDENT_REQUEST                   = C.NL80211_WOWLAN_TRIG_EAP_IDENT_REQUEST
+	NL80211_WOWLAN_TRIG_GTK_REKEY_FAILURE                   = C.NL80211_WOWLAN_TRIG_GTK_REKEY_FAILURE
+	NL80211_WOWLAN_TRIG_GTK_REKEY_SUPPORTED                 = C.NL80211_WOWLAN_TRIG_GTK_REKEY_SUPPORTED
+	NL80211_WOWLAN_TRIG_MAGIC_PKT                           = C.NL80211_WOWLAN_TRIG_MAGIC_PKT
+	NL80211_WOWLAN_TRIG_NET_DETECT                          = C.NL80211_WOWLAN_TRIG_NET_DETECT
+	NL80211_WOWLAN_TRIG_NET_DETECT_RESULTS                  = C.NL80211_WOWLAN_TRIG_NET_DETECT_RESULTS
+	NL80211_WOWLAN_TRIG_PKT_PATTERN                         = C.NL80211_WOWLAN_TRIG_PKT_PATTERN
+	NL80211_WOWLAN_TRIG_RFKILL_RELEASE                      = C.NL80211_WOWLAN_TRIG_RFKILL_RELEASE
+	NL80211_WOWLAN_TRIG_TCP_CONNECTION                      = C.NL80211_WOWLAN_TRIG_TCP_CONNECTION
+	NL80211_WOWLAN_TRIG_WAKEUP_PKT_80211                    = C.NL80211_WOWLAN_TRIG_WAKEUP_PKT_80211
+	NL80211_WOWLAN_TRIG_WAKEUP_PKT_80211_LEN                = C.NL80211_WOWLAN_TRIG_WAKEUP_PKT_80211_LEN
+	NL80211_WOWLAN_TRIG_WAKEUP_PKT_8023                     = C.NL80211_WOWLAN_TRIG_WAKEUP_PKT_8023
+	NL80211_WOWLAN_TRIG_WAKEUP_PKT_8023_LEN                 = C.NL80211_WOWLAN_TRIG_WAKEUP_PKT_8023_LEN
+	NL80211_WOWLAN_TRIG_WAKEUP_TCP_CONNLOST                 = C.NL80211_WOWLAN_TRIG_WAKEUP_TCP_CONNLOST
+	NL80211_WOWLAN_TRIG_WAKEUP_TCP_MATCH                    = C.NL80211_WOWLAN_TRIG_WAKEUP_TCP_MATCH
+	NL80211_WOWLAN_TRIG_WAKEUP_TCP_NOMORETOKENS             = C.NL80211_WOWLAN_TRIG_WAKEUP_TCP_NOMORETOKENS
+	NL80211_WPA_VERSION_1                                   = C.NL80211_WPA_VERSION_1
+	NL80211_WPA_VERSION_2                                   = C.NL80211_WPA_VERSION_2
+	NL80211_WPA_VERSION_3                                   = C.NL80211_WPA_VERSION_3
+)
+
+// generated by:
+// perl -nlE '/^\s*((FR_ACT|FRA)_\w+)/ && say "$1 = C.$1"' include/uapi/linux/fib_rules.h
+const (
+	FRA_UNSPEC             = C.FRA_UNSPEC
+	FRA_DST                = C.FRA_DST
+	FRA_SRC                = C.FRA_SRC
+	FRA_IIFNAME            = C.FRA_IIFNAME
+	FRA_GOTO               = C.FRA_GOTO
+	FRA_UNUSED2            = C.FRA_UNUSED2
+	FRA_PRIORITY           = C.FRA_PRIORITY
+	FRA_UNUSED3            = C.FRA_UNUSED3
+	FRA_UNUSED4            = C.FRA_UNUSED4
+	FRA_UNUSED5            = C.FRA_UNUSED5
+	FRA_FWMARK             = C.FRA_FWMARK
+	FRA_FLOW               = C.FRA_FLOW
+	FRA_TUN_ID             = C.FRA_TUN_ID
+	FRA_SUPPRESS_IFGROUP   = C.FRA_SUPPRESS_IFGROUP
+	FRA_SUPPRESS_PREFIXLEN = C.FRA_SUPPRESS_PREFIXLEN
+	FRA_TABLE              = C.FRA_TABLE
+	FRA_FWMASK             = C.FRA_FWMASK
+	FRA_OIFNAME            = C.FRA_OIFNAME
+	FRA_PAD                = C.FRA_PAD
+	FRA_L3MDEV             = C.FRA_L3MDEV
+	FRA_UID_RANGE          = C.FRA_UID_RANGE
+	FRA_PROTOCOL           = C.FRA_PROTOCOL
+	FRA_IP_PROTO           = C.FRA_IP_PROTO
+	FRA_SPORT_RANGE        = C.FRA_SPORT_RANGE
+	FRA_DPORT_RANGE        = C.FRA_DPORT_RANGE
+	FR_ACT_UNSPEC          = C.FR_ACT_UNSPEC
+	FR_ACT_TO_TBL          = C.FR_ACT_TO_TBL
+	FR_ACT_GOTO            = C.FR_ACT_GOTO
+	FR_ACT_NOP             = C.FR_ACT_NOP
+	FR_ACT_RES3            = C.FR_ACT_RES3
+	FR_ACT_RES4            = C.FR_ACT_RES4
+	FR_ACT_BLACKHOLE       = C.FR_ACT_BLACKHOLE
+	FR_ACT_UNREACHABLE     = C.FR_ACT_UNREACHABLE
+	FR_ACT_PROHIBIT        = C.FR_ACT_PROHIBIT
+)
+
+// generated by:
+// perl -nlE '/^\s*(AUDIT_NLGRP_\w+)/ && say "$1 = C.$1"' audit.h
+const (
+	AUDIT_NLGRP_NONE    = C.AUDIT_NLGRP_NONE
+	AUDIT_NLGRP_READLOG = C.AUDIT_NLGRP_READLOG
+)
+
+// generated by:
+// perl -nlE '/^#define (TUN_F_\w+)/ && say "$1 = C.$1"' include/uapi/linux/if_tun.h
+const (
+	TUN_F_CSUM    = C.TUN_F_CSUM
+	TUN_F_TSO4    = C.TUN_F_TSO4
+	TUN_F_TSO6    = C.TUN_F_TSO6
+	TUN_F_TSO_ECN = C.TUN_F_TSO_ECN
+	TUN_F_UFO     = C.TUN_F_UFO
+)
+
+// generated by:
+// perl -nlE '/^#define (VIRTIO_NET_HDR_F_\w+)/ && say "$1 = C.$1"' include/uapi/linux/virtio_net.h
+const (
+	VIRTIO_NET_HDR_F_NEEDS_CSUM = C.VIRTIO_NET_HDR_F_NEEDS_CSUM
+	VIRTIO_NET_HDR_F_DATA_VALID = C.VIRTIO_NET_HDR_F_DATA_VALID
+	VIRTIO_NET_HDR_F_RSC_INFO   = C.VIRTIO_NET_HDR_F_RSC_INFO
+)
+
+// generated by:
+// perl -nlE '/^#define (VIRTIO_NET_HDR_GSO_\w+)/ && say "$1 = C.$1"' include/uapi/linux/virtio_net.h
+const (
+	VIRTIO_NET_HDR_GSO_NONE  = C.VIRTIO_NET_HDR_GSO_NONE
+	VIRTIO_NET_HDR_GSO_TCPV4 = C.VIRTIO_NET_HDR_GSO_TCPV4
+	VIRTIO_NET_HDR_GSO_UDP   = C.VIRTIO_NET_HDR_GSO_UDP
+	VIRTIO_NET_HDR_GSO_TCPV6 = C.VIRTIO_NET_HDR_GSO_TCPV6
+	VIRTIO_NET_HDR_GSO_ECN   = C.VIRTIO_NET_HDR_GSO_ECN
+)

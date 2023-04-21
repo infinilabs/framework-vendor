@@ -35,13 +35,14 @@ func testGetconf(t *testing.T, got int, name, getconfWhich string) {
 	}
 
 	cmd := exec.Command(getconf, getconfWhich)
-	var out bytes.Buffer
-	cmd.Stdout = &out
+	var outb, errb bytes.Buffer
+	cmd.Stdout = &outb
+	cmd.Stderr = &errb
 	if err := cmd.Run(); err != nil {
-		t.Skipf("failed to invoke getconf: %v", err)
+		t.Skipf("failed to run %v: %v (%v)", cmd, err, strings.TrimSpace(errb.String()))
 	}
 
-	want, err := strconv.ParseInt(strings.TrimSpace(out.String()), 10, 64)
+	want, err := strconv.ParseInt(strings.TrimSpace(outb.String()), 10, 64)
 	if err != nil {
 		t.Skipf("failed to parse getconf output: %v", err)
 	}
@@ -49,6 +50,26 @@ func testGetconf(t *testing.T, got int, name, getconfWhich string) {
 	if got != int(want) {
 		t.Errorf("%s returned %v, want %v (getconf %s)", name, got, want, getconfWhich)
 	}
+}
+
+func confName(name string) string {
+	switch runtime.GOOS {
+	case "illumos", "netbsd", "openbsd", "solaris":
+		return strings.TrimPrefix(name, "_")
+	}
+	return name
+}
+
+func TestGetConfigured(t *testing.T) {
+	n, err := numcpus.GetConfigured()
+	if errors.Is(err, numcpus.ErrNotSupported) {
+		t.Skipf("GetConfigured not supported on %s", runtime.GOOS)
+	} else if err != nil {
+		t.Fatalf("GetConfigured: %v", err)
+	}
+	t.Logf("Configured = %v", n)
+
+	testGetconf(t, n, "GetConfigured", confName("_NPROCESSORS_CONF"))
 }
 
 func TestGetKernelMax(t *testing.T) {
@@ -80,7 +101,7 @@ func TestGetOnline(t *testing.T) {
 	}
 	t.Logf("Online = %v", n)
 
-	testGetconf(t, n, "GetOnline", "_NPROCESSORS_ONLN")
+	testGetconf(t, n, "GetOnline", confName("_NPROCESSORS_ONLN"))
 }
 
 func TestGetPossible(t *testing.T) {
@@ -101,6 +122,4 @@ func TestGetPresent(t *testing.T) {
 		t.Fatalf("GetPresent: %v", err)
 	}
 	t.Logf("Present = %v", n)
-
-	testGetconf(t, n, "GetPresent", "_NPROCESSORS_CONF")
 }

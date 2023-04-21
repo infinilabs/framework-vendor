@@ -15,11 +15,13 @@ import (
 	"io/ioutil"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 	"unsafe"
@@ -215,6 +217,59 @@ func firstIPv4(t *testing.T, ifi *net.Interface) (net.IP, bool) {
 	}
 
 	return nil, false
+}
+
+func TestPidfd(t *testing.T) {
+	// Start a child process which will sleep for 1 hour; longer than the 10
+	// minute default Go test timeout.
+	cmd := exec.Command("sleep", "1h")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("failed to exec sleep: %v", err)
+	}
+
+	fd, err := unix.PidfdOpen(cmd.Process.Pid, 0)
+	if err != nil {
+		// GOARCH arm/arm64 and GOOS android builders do not support pidfds.
+		if errors.Is(err, unix.ENOSYS) {
+			t.Skipf("skipping, pidfd_open is not implemented: %v", err)
+		}
+
+		t.Fatalf("failed to open child pidfd: %v", err)
+	}
+	defer unix.Close(fd)
+
+	// Child is running but not terminated.
+	if err := unix.Waitid(unix.P_PIDFD, fd, nil, unix.WEXITED|unix.WNOHANG, nil); err != nil {
+		if errors.Is(err, unix.EINVAL) {
+			t.Skip("skipping due to waitid EINVAL, see https://go.dev/issues/52014")
+		}
+
+		t.Fatalf("failed to check for child exit: %v", err)
+	}
+
+	const want = unix.SIGHUP
+	if err := unix.PidfdSendSignal(fd, want, nil, 0); err != nil {
+		t.Fatalf("failed to signal child process: %v", err)
+	}
+
+	// Now verify that the child process received the expected signal.
+	var eerr *exec.ExitError
+	if err := cmd.Wait(); !errors.As(err, &eerr) {
+		t.Fatalf("child process terminated but did not return an exit error: %v", err)
+	}
+
+	if err := unix.Waitid(unix.P_PIDFD, fd, nil, unix.WEXITED, nil); !errors.Is(err, unix.ECHILD) {
+		t.Fatalf("expected ECHILD for final waitid, but got: %v", err)
+	}
+
+	ws, ok := eerr.Sys().(syscall.WaitStatus)
+	if !ok {
+		t.Fatalf("expected syscall.WaitStatus value, but got: %#T", eerr.Sys())
+	}
+
+	if got := ws.Signal(); got != want {
+		t.Fatalf("unexpected child exit signal, got: %s, want: %s", got, want)
+	}
 }
 
 func TestPpoll(t *testing.T) {
@@ -815,16 +870,35 @@ func TestEpoll(t *testing.T) {
 }
 
 func TestPrctlRetInt(t *testing.T) {
-	err := unix.Prctl(unix.PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)
-	if err != nil {
-		t.Skipf("Prctl: %v, skipping test", err)
+	skipc := make(chan bool, 1)
+	skip := func() {
+		skipc <- true
+		runtime.Goexit()
 	}
-	v, err := unix.PrctlRetInt(unix.PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0)
-	if err != nil {
-		t.Fatalf("failed to perform prctl: %v", err)
-	}
-	if v != 1 {
-		t.Fatalf("unexpected return from prctl; got %v, expected %v", v, 1)
+
+	go func() {
+		// This test uses prctl to modify the calling thread, so run it on its own
+		// throwaway thread and do not unlock it when the goroutine exits.
+		runtime.LockOSThread()
+		defer close(skipc)
+
+		err := unix.Prctl(unix.PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)
+		if err != nil {
+			t.Logf("Prctl: %v, skipping test", err)
+			skip()
+		}
+
+		v, err := unix.PrctlRetInt(unix.PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0)
+		if err != nil {
+			t.Errorf("failed to perform prctl: %v", err)
+		}
+		if v != 1 {
+			t.Errorf("unexpected return from prctl; got %v, expected %v", v, 1)
+		}
+	}()
+
+	if <-skipc {
+		t.SkipNow()
 	}
 }
 
@@ -1024,4 +1098,78 @@ func TestIoctlFileDedupeRange(t *testing.T) {
 		t.Errorf("Unexpected amount of bytes deduped %v != %v",
 			dedupe.Info[1].Bytes_deduped, 0)
 	}
+}
+
+// TestPwritevOffsets tests golang.org/issues/57291 where
+// offs2lohi was shifting by the size of long in bytes, not bits.
+func TestPwritevOffsets(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "x.txt")
+
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { f.Close() })
+
+	const (
+		off = 20
+	)
+	b := [][]byte{{byte(0)}}
+	n, err := unix.Pwritev(int(f.Fd()), b, off)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != len(b) {
+		t.Fatalf("expected to write %d, wrote %d", len(b), n)
+	}
+
+	info, err := f.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := off + int64(len(b))
+	if info.Size() != want {
+		t.Fatalf("expected size to be %d, got %d", want, info.Size())
+	}
+}
+
+func TestReadvAllocate(t *testing.T) {
+	f, err := os.Create(filepath.Join(t.TempDir(), "test"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { f.Close() })
+
+	test := func(name string, fn func(fd int)) {
+		n := int(testing.AllocsPerRun(100, func() {
+			fn(int(f.Fd()))
+		}))
+		if n != 0 {
+			t.Errorf("%q got %d allocations, want 0", name, n)
+		}
+	}
+
+	iovs := make([][]byte, 8)
+	for i := range iovs {
+		iovs[i] = []byte{'A'}
+	}
+
+	test("Writev", func(fd int) {
+		unix.Writev(fd, iovs)
+	})
+	test("Pwritev", func(fd int) {
+		unix.Pwritev(fd, iovs, 0)
+	})
+	test("Pwritev2", func(fd int) {
+		unix.Pwritev2(fd, iovs, 0, 0)
+	})
+	test("Readv", func(fd int) {
+		unix.Readv(fd, iovs)
+	})
+	test("Preadv", func(fd int) {
+		unix.Preadv(fd, iovs, 0)
+	})
+	test("Preadv2", func(fd int) {
+		unix.Preadv2(fd, iovs, 0, 0)
+	})
 }
