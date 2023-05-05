@@ -17,8 +17,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shirou/gopsutil/v3/internal/common"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/shirou/gopsutil/v3/internal/common"
 )
 
 var mu sync.Mutex
@@ -294,7 +295,7 @@ func Test_Process_Name(t *testing.T) {
 		t.Errorf("getting name error %v", err)
 	}
 	if !strings.Contains(n, "process.test") {
-		t.Errorf("invalid Exe %s", n)
+		t.Errorf("invalid Name %s", n)
 	}
 }
 

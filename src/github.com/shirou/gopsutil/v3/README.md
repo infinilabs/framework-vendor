@@ -90,6 +90,9 @@ environment variable.
 You can set an alternative location to `/dev` by setting the `HOST_DEV`
 environment variable.
 
+You can set an alternative location to `/` by setting the `HOST_ROOT`
+environment variable.
+
 You can set an alternative location to `/proc/N/mountinfo` by setting the
 `HOST_PROC_MOUNTINFO` environment variable.
 
@@ -151,7 +154,7 @@ will provide useful information.
   - system wide stats on netfilter conntrack module
   - sourced from /proc/sys/net/netfilter/nf_conntrack_count
 
-Some code is ported from Ohai. many thanks.
+Some code is ported from Ohai. Many thanks.
 
 ## Current Status
 
