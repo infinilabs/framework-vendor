@@ -7,19 +7,66 @@ package flate
 import (
 	"archive/zip"
 	"bytes"
+	"compress/flate"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"math/rand"
+	"os"
 	"runtime"
 	"strconv"
 	"strings"
 	"testing"
 )
 
+func TestWriterMemUsage(t *testing.T) {
+	testMem := func(t *testing.T, fn func()) {
+		var before, after runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&before)
+		fn()
+		runtime.GC()
+		runtime.ReadMemStats(&after)
+		t.Logf("%s: Memory Used: %dKB, %d allocs", t.Name(), (after.HeapInuse-before.HeapInuse)/1024, after.HeapObjects-before.HeapObjects)
+	}
+	data := make([]byte, 100000)
+	t.Run("stateless", func(t *testing.T) {
+		testMem(t, func() {
+			StatelessDeflate(io.Discard, data, false, nil)
+		})
+	})
+	for level := HuffmanOnly; level <= BestCompression; level++ {
+		t.Run(fmt.Sprint("level-", level), func(t *testing.T) {
+			var zr *Writer
+			var err error
+			testMem(t, func() {
+				zr, err = NewWriter(io.Discard, level)
+				if err != nil {
+					t.Fatal(err)
+				}
+				zr.Write(data)
+			})
+			zr.Close()
+		})
+	}
+	for level := HuffmanOnly; level <= BestCompression; level++ {
+		t.Run(fmt.Sprint("stdlib-", level), func(t *testing.T) {
+			var zr *flate.Writer
+			var err error
+			testMem(t, func() {
+				zr, err = flate.NewWriter(io.Discard, level)
+				if err != nil {
+					t.Fatal(err)
+				}
+				zr.Write(data)
+			})
+			zr.Close()
+		})
+	}
+}
+
 func TestWriterRegression(t *testing.T) {
-	data, err := ioutil.ReadFile("testdata/regression.zip")
+	data, err := os.ReadFile("testdata/regression.zip")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,12 +83,15 @@ func TestWriterRegression(t *testing.T) {
 				}
 
 				t.Run(tt.Name, func(t *testing.T) {
+					if testing.Short() && tt.FileInfo().Size() > 10000 {
+						t.SkipNow()
+					}
 					r, err := tt.Open()
 					if err != nil {
 						t.Error(err)
 						return
 					}
-					in, err := ioutil.ReadAll(r)
+					in, err := io.ReadAll(r)
 					if err != nil {
 						t.Error(err)
 					}
@@ -63,11 +113,11 @@ func TestWriterRegression(t *testing.T) {
 						t.Fatal(msg + err.Error())
 					}
 					fr1 := NewReader(buf)
-					data2, err := ioutil.ReadAll(fr1)
+					data2, err := io.ReadAll(fr1)
 					if err != nil {
 						t.Fatal(msg + err.Error())
 					}
-					if bytes.Compare(in, data2) != 0 {
+					if !bytes.Equal(in, data2) {
 						t.Fatal(msg + "not equal")
 					}
 					// Do it again...
@@ -86,11 +136,11 @@ func TestWriterRegression(t *testing.T) {
 						t.Fatal(msg + err.Error())
 					}
 					fr1 = NewReader(buf)
-					data2, err = ioutil.ReadAll(fr1)
+					data2, err = io.ReadAll(fr1)
 					if err != nil {
 						t.Fatal(msg + err.Error())
 					}
-					if bytes.Compare(in, data2) != 0 {
+					if !bytes.Equal(in, data2) {
 						t.Fatal(msg + "not equal")
 					}
 				})
@@ -101,7 +151,7 @@ func TestWriterRegression(t *testing.T) {
 
 func benchmarkEncoder(b *testing.B, testfile, level, n int) {
 	b.SetBytes(int64(n))
-	buf0, err := ioutil.ReadFile(testfiles[testfile])
+	buf0, err := os.ReadFile(testfiles[testfile])
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -117,11 +167,14 @@ func benchmarkEncoder(b *testing.B, testfile, level, n int) {
 	}
 	buf0 = nil
 	runtime.GC()
-	w, err := NewWriter(ioutil.Discard, level)
+	w, err := NewWriter(io.Discard, level)
+	if err != nil {
+		b.Fatal(err)
+	}
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		w.Reset(ioutil.Discard)
+		w.Reset(io.Discard)
 		_, err = w.Write(buf1)
 		if err != nil {
 			b.Fatal(err)
@@ -166,7 +219,7 @@ func BenchmarkEncodeTwainSL1e6(b *testing.B)        { benchmarkStatelessEncoder(
 
 func benchmarkStatelessEncoder(b *testing.B, testfile, n int) {
 	b.SetBytes(int64(n))
-	buf0, err := ioutil.ReadFile(testfiles[testfile])
+	buf0, err := os.ReadFile(testfiles[testfile])
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -185,7 +238,7 @@ func benchmarkStatelessEncoder(b *testing.B, testfile, n int) {
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		w := NewStatelessWriter(ioutil.Discard)
+		w := NewStatelessWriter(io.Discard)
 		_, err = w.Write(buf1)
 		if err != nil {
 			b.Fatal(err)
@@ -251,7 +304,7 @@ func TestWriteError(t *testing.T) {
 				t.Fatal("Level", l, "Expected an error on close")
 			}
 
-			w.Reset(ioutil.Discard)
+			w.Reset(io.Discard)
 			n2, err = w.Write([]byte{1, 2, 3, 4, 5, 6})
 			if err != nil {
 				t.Fatal("Level", l, "Got unexpected error after reset:", err)
@@ -290,7 +343,7 @@ func TestWriter_Reset(t *testing.T) {
 			}
 			for ; offset <= 256; offset *= 2 {
 				// Fail after 'fail' writes
-				w, err := NewWriter(ioutil.Discard, l)
+				w, err := NewWriter(io.Discard, l)
 				if err != nil {
 					t.Fatalf("NewWriter: level %d: %v", l, err)
 				}
@@ -448,4 +501,41 @@ func copyBuffer(dst io.Writer, src io.Reader, buf []byte) (written int64, err er
 		}
 	}
 	return written, err
+}
+
+func BenchmarkCompressAllocations(b *testing.B) {
+	payload := []byte(strings.Repeat("Tiny payload", 20))
+	for j := -2; j <= 9; j++ {
+		b.Run("level("+strconv.Itoa(j)+")", func(b *testing.B) {
+			b.Run("flate", func(b *testing.B) {
+				b.ReportAllocs()
+
+				for i := 0; i < b.N; i++ {
+					w, err := NewWriter(io.Discard, j)
+					if err != nil {
+						b.Fatal(err)
+					}
+					w.Write(payload)
+					w.Close()
+				}
+			})
+		})
+	}
+}
+
+func BenchmarkCompressAllocationsSingle(b *testing.B) {
+	payload := []byte(strings.Repeat("Tiny payload", 20))
+	const level = 2
+	b.Run("flate", func(b *testing.B) {
+		b.ReportAllocs()
+
+		for i := 0; i < b.N; i++ {
+			w, err := NewWriter(io.Discard, level)
+			if err != nil {
+				b.Fatal(err)
+			}
+			w.Write(payload)
+			w.Close()
+		}
+	})
 }

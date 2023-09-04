@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -131,8 +132,12 @@ func TestWriter(t *testing.T) {
 		},
 
 		{
-			scenario: "writing messsages with a small batch byte size",
+			scenario: "writing messages with a small batch byte size",
 			function: testWriterSmallBatchBytes,
+		},
+		{
+			scenario: "writing messages with headers",
+			function: testWriterBatchBytesHeaders,
 		},
 		{
 			scenario: "setting a non default balancer on the writer",
@@ -159,7 +164,7 @@ func TestWriter(t *testing.T) {
 			function: testWriterInvalidPartition,
 		},
 		{
-			scenario: "writing a message to a non-existant topic creates the topic",
+			scenario: "writing a message to a non-existent topic creates the topic",
 			function: testWriterAutoCreateTopic,
 		},
 		{
@@ -169,6 +174,14 @@ func TestWriter(t *testing.T) {
 		{
 			scenario: "writing a message with SASL Plain authentication",
 			function: testWriterSasl,
+		},
+		{
+			scenario: "test default configuration values",
+			function: testWriterDefaults,
+		},
+		{
+			scenario: "test write message with writer data",
+			function: testWriteMessageWithWriterData,
 		},
 	}
 
@@ -441,7 +454,7 @@ func testWriterBatchBytes(t *testing.T) {
 
 	w := newTestWriter(WriterConfig{
 		Topic:        topic,
-		BatchBytes:   48,
+		BatchBytes:   50,
 		BatchTimeout: math.MaxInt32 * time.Second,
 		Balancer:     &RoundRobin{},
 	})
@@ -450,10 +463,10 @@ func testWriterBatchBytes(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := w.WriteMessages(ctx, []Message{
-		{Value: []byte("M0")}, // 24 Bytes
-		{Value: []byte("M1")}, // 24 Bytes
-		{Value: []byte("M2")}, // 24 Bytes
-		{Value: []byte("M3")}, // 24 Bytes
+		{Value: []byte("M0")}, // 25 Bytes
+		{Value: []byte("M1")}, // 25 Bytes
+		{Value: []byte("M2")}, // 25 Bytes
+		{Value: []byte("M3")}, // 25 Bytes
 	}...); err != nil {
 		t.Error(err)
 		return
@@ -578,6 +591,67 @@ func testWriterSmallBatchBytes(t *testing.T) {
 
 	for _, m := range msgs {
 		if string(m.Value) == "Hi" || string(m.Value) == "By" {
+			continue
+		}
+		t.Error("bad messages in partition", msgs)
+	}
+}
+
+func testWriterBatchBytesHeaders(t *testing.T) {
+	topic := makeTopic()
+	createTopic(t, topic, 1)
+	defer deleteTopic(t, topic)
+
+	offset, err := readOffset(topic, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := newTestWriter(WriterConfig{
+		Topic:        topic,
+		BatchBytes:   100,
+		BatchTimeout: 50 * time.Millisecond,
+		Balancer:     &RoundRobin{},
+	})
+	defer w.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := w.WriteMessages(ctx, []Message{
+		{
+			Value: []byte("Hello World 1"),
+			Headers: []Header{
+				{Key: "User-Agent", Value: []byte("abc/xyz")},
+			},
+		},
+		{
+			Value: []byte("Hello World 2"),
+			Headers: []Header{
+				{Key: "User-Agent", Value: []byte("abc/xyz")},
+			},
+		},
+	}...); err != nil {
+		t.Error(err)
+		return
+	}
+	ws := w.Stats()
+	if ws.Writes != 2 {
+		t.Error("didn't batch messages; Writes: ", ws.Writes)
+		return
+	}
+	msgs, err := readPartition(topic, 0, offset)
+	if err != nil {
+		t.Error("error reading partition", err)
+		return
+	}
+
+	if len(msgs) != 2 {
+		t.Error("bad messages in partition", msgs)
+		return
+	}
+
+	for _, m := range msgs {
+		if strings.HasPrefix(string(m.Value), "Hello World") {
 			continue
 		}
 		t.Error("bad messages in partition", msgs)
@@ -715,6 +789,45 @@ func testWriterUnexpectedMessageTopic(t *testing.T) {
 	}
 }
 
+func testWriteMessageWithWriterData(t *testing.T) {
+	topic := makeTopic()
+	createTopic(t, topic, 1)
+	defer deleteTopic(t, topic)
+	w := newTestWriter(WriterConfig{
+		Topic:    topic,
+		Balancer: &RoundRobin{},
+	})
+	defer w.Close()
+
+	index := 0
+	w.Completion = func(messages []Message, err error) {
+		if err != nil {
+			t.Errorf("unexpected error %v", err)
+		}
+
+		for _, msg := range messages {
+			meta := msg.WriterData.(int)
+			if index != meta {
+				t.Errorf("metadata is not correct, index = %d, writerData = %d", index, meta)
+			}
+			index += 1
+		}
+	}
+
+	msg := Message{Key: []byte("key"), Value: []byte("Hello World")}
+	for i := 0; i < 5; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		msg.WriterData = i
+		err := w.WriteMessages(ctx, msg)
+		if err != nil {
+			t.Errorf("unexpected error %v", err)
+		}
+	}
+
+}
+
 func testWriterAutoCreateTopic(t *testing.T) {
 	topic := makeTopic()
 	// Assume it's going to get created.
@@ -815,6 +928,19 @@ func testWriterSasl(t *testing.T) {
 	}
 	if err != nil {
 		t.Errorf("unable to create topic %v", err)
+	}
+}
+
+func testWriterDefaults(t *testing.T) {
+	w := &Writer{}
+	defer w.Close()
+
+	if w.writeBackoffMin() != 100*time.Millisecond {
+		t.Error("Incorrect default min write backoff delay")
+	}
+
+	if w.writeBackoffMax() != 1*time.Second {
+		t.Error("Incorrect default max write backoff delay")
 	}
 }
 

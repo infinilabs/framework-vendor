@@ -11,7 +11,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"math/rand"
 	"net/http"
@@ -19,10 +18,10 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"testing"
 
-	"github.com/klauspost/compress/snappy"
+	"github.com/klauspost/compress/internal/snapref"
+	"github.com/klauspost/compress/zip"
 	"github.com/klauspost/compress/zstd"
 )
 
@@ -39,28 +38,29 @@ func TestMaxEncodedLen(t *testing.T) {
 	testSet := []struct {
 		in, out int64
 	}{
-		{in: 0, out: 1},
-		{in: 1 << 24, out: 1<<24 + int64(binary.PutVarint([]byte{binary.MaxVarintLen32: 0}, int64(1<<24))) + literalExtraSize(1<<24)},
-		{in: MaxBlockSize, out: math.MaxUint32},
-		{in: math.MaxUint32 - binary.MaxVarintLen32 - literalExtraSize(math.MaxUint32), out: math.MaxUint32},
-		{in: math.MaxUint32 - 9, out: -1},
-		{in: math.MaxUint32 - 8, out: -1},
-		{in: math.MaxUint32 - 7, out: -1},
-		{in: math.MaxUint32 - 6, out: -1},
-		{in: math.MaxUint32 - 5, out: -1},
-		{in: math.MaxUint32 - 4, out: -1},
-		{in: math.MaxUint32 - 3, out: -1},
-		{in: math.MaxUint32 - 2, out: -1},
-		{in: math.MaxUint32 - 1, out: -1},
-		{in: math.MaxUint32, out: -1},
-		{in: -1, out: -1},
-		{in: -2, out: -1},
+		0:  {in: 0, out: 1},
+		1:  {in: 1 << 24, out: 1<<24 + int64(binary.PutVarint([]byte{binary.MaxVarintLen32: 0}, int64(1<<24))) + literalExtraSize(1<<24)},
+		2:  {in: MaxBlockSize, out: math.MaxUint32},
+		3:  {in: math.MaxUint32 - binary.MaxVarintLen32 - literalExtraSize(math.MaxUint32), out: math.MaxUint32},
+		4:  {in: math.MaxUint32 - 9, out: -1},
+		5:  {in: math.MaxUint32 - 8, out: -1},
+		6:  {in: math.MaxUint32 - 7, out: -1},
+		7:  {in: math.MaxUint32 - 6, out: -1},
+		8:  {in: math.MaxUint32 - 5, out: -1},
+		9:  {in: math.MaxUint32 - 4, out: -1},
+		10: {in: math.MaxUint32 - 3, out: -1},
+		11: {in: math.MaxUint32 - 2, out: -1},
+		12: {in: math.MaxUint32 - 1, out: -1},
+		13: {in: math.MaxUint32, out: -1},
+		14: {in: -1, out: -1},
+		15: {in: -2, out: -1},
 	}
 	// 32 bit platforms have a different threshold.
 	if maxInt == math.MaxInt32 {
-		testSet[2].out = -1
+		testSet[2].out = math.MaxInt32
 		testSet[3].out = -1
 	}
+	t.Log("Maxblock:", MaxBlockSize, "reduction:", intReduction)
 	// Test all sizes up to maxBlockSize.
 	for i := int64(0); i < maxBlockSize; i++ {
 		testSet = append(testSet, struct{ in, out int64 }{in: i, out: i + int64(binary.PutVarint([]byte{binary.MaxVarintLen32: 0}, i)) + literalExtraSize(i)})
@@ -70,7 +70,7 @@ func TestMaxEncodedLen(t *testing.T) {
 		want := tt.out
 		got := int64(MaxEncodedLen(int(tt.in)))
 		if got != want {
-			t.Fatalf("input: %d, want: %d, got: %d", tt.in, want, got)
+			t.Errorf("test %d: input: %d, want: %d, got: %d", i, tt.in, want, got)
 		}
 	}
 }
@@ -131,7 +131,7 @@ func roundtrip(b, ebuf, dbuf []byte) error {
 	// Test concat with some existing data.
 	dst := []byte("existing")
 	// Add 3 different encodes and a 0 length block.
-	concat, err := ConcatBlocks(dst, Encode(nil, b), EncodeBetter(nil, b), []byte{0}, snappy.Encode(nil, b))
+	concat, err := ConcatBlocks(dst, Encode(nil, b), EncodeBetter(nil, b), []byte{0}, EncodeSnappy(nil, b))
 	if err != nil {
 		return fmt.Errorf("concat error: %v", err)
 	}
@@ -589,7 +589,7 @@ const (
 
 func TestDecodeGoldenInput(t *testing.T) {
 	tDir := filepath.FromSlash(*testdataDir)
-	src, err := ioutil.ReadFile(filepath.Join(tDir, goldenCompressed))
+	src, err := os.ReadFile(filepath.Join(tDir, goldenCompressed))
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
@@ -597,7 +597,7 @@ func TestDecodeGoldenInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Decode: %v", err)
 	}
-	want, err := ioutil.ReadFile(filepath.Join(tDir, goldenText))
+	want, err := os.ReadFile(filepath.Join(tDir, goldenText))
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
@@ -691,7 +691,7 @@ func TestEncoderSkip(t *testing.T) {
 					want := src[i:]
 					dec.Reset(bytes.NewBuffer(compressed))
 					// Read some of it first
-					read, err := io.CopyN(ioutil.Discard, dec, int64(len(want)/10))
+					read, err := io.CopyN(io.Discard, dec, int64(len(want)/10))
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -701,7 +701,7 @@ func TestEncoderSkip(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					got, err := ioutil.ReadAll(dec)
+					got, err := io.ReadAll(dec)
 					if err != nil {
 						t.Errorf("Skipping %d returned error: %v", i, err)
 						return
@@ -770,7 +770,7 @@ func TestFramingFormat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dst, err := ioutil.ReadAll(NewReader(buf))
+	dst, err := io.ReadAll(NewReader(buf))
 	if err != nil {
 		t.Fatalf("ReadAll: decoding: %v", err)
 	}
@@ -806,7 +806,7 @@ func TestFramingFormatBetter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dst, err := ioutil.ReadAll(NewReader(buf))
+	dst, err := io.ReadAll(NewReader(buf))
 	if err != nil {
 		t.Fatalf("ReadAll: decoding: %v", err)
 	}
@@ -868,14 +868,14 @@ func TestEmitCopy(t *testing.T) {
 		{8, 62, "\xf6\x08\x00"},
 		{8, 63, "\xfa\x08\x00"},
 		{8, 64, "\xfe\x08\x00"},
-		{8, 65, "\xee\x08\x00\x05\x00"},
-		{8, 66, "\xee\x08\x00\x09\x00"},
-		{8, 67, "\xee\x08\x00\x0d\x00"},
-		{8, 68, "\xee\x08\x00\x11\x00"},
-		{8, 69, "\xee\x08\x00\x15\x08"},
-		{8, 80, "\xee\x08\x00\x15\x00\x0c"},
-		{8, 800, "\xee\x08\x00\x19\x00\xe0\x01"},
-		{8, 800000, "\xee\x08\x00\x1d\x00\xc0\x34\x0b"},
+		{8, 65, "\x11\b\x15\x001"},
+		{8, 66, "\x11\b\x15\x002"},
+		{8, 67, "\x11\b\x15\x003"},
+		{8, 68, "\x11\b\x15\x004"},
+		{8, 69, "\x11\b\x15\x005"},
+		{8, 80, "\x11\b\x15\x00@"},
+		{8, 800, "\x11\b\x19\x00\x14\x02"},
+		{8, 800000, "\x11\b\x1d\x00\xf44\v"},
 
 		{256, 04, "\x21\x00"},
 		{256, 11, "\x3d\x00"},
@@ -887,14 +887,14 @@ func TestEmitCopy(t *testing.T) {
 		{256, 62, "\xf6\x00\x01"},
 		{256, 63, "\xfa\x00\x01"},
 		{256, 64, "\xfe\x00\x01"},
-		{256, 65, "\xee\x00\x01\x05\x00"},
-		{256, 66, "\xee\x00\x01\x09\x00"},
-		{256, 67, "\xee\x00\x01\x0d\x00"},
-		{256, 68, "\xee\x00\x01\x11\x00"},
-		{256, 69, "\xee\x00\x01\x35\x00"},
-		{256, 80, "\xee\x00\x01\x15\x00\x0c"},
-		{256, 800, "\xee\x00\x01\x19\x00\xe0\x01"},
-		{256, 80000, "\xee\x00\x01\x1d\x00\x40\x38\x00"},
+		{256, 65, "1\x00\x15\x001"},
+		{256, 66, "1\x00\x15\x002"},
+		{256, 67, "1\x00\x15\x003"},
+		{256, 68, "1\x00\x15\x004"},
+		{256, 69, "1\x00\x15\x005"},
+		{256, 80, "1\x00\x15\x00@"},
+		{256, 800, "1\x00\x19\x00\x14\x02"},
+		{256, 80000, "1\x00\x1d\x00t8\x00"},
 
 		{2048, 04, "\x0e\x00\x08"},
 		{2048, 11, "\x2a\x00\x08"},
@@ -927,7 +927,7 @@ func TestEmitCopy(t *testing.T) {
 		n := emitCopy(dst, tc.offset, tc.length)
 		got := string(dst[:n])
 		if got != tc.want {
-			t.Errorf("offset=%d, length=%d:\ngot  % x\nwant % x", tc.offset, tc.length, got, tc.want)
+			t.Errorf("offset=%d, length=%d:\ngot  %q\nwant %q", tc.offset, tc.length, got, tc.want)
 		}
 	}
 }
@@ -963,7 +963,7 @@ loop:
 			t.Errorf("i=%#02x: Close: %v", i, err)
 			continue
 		}
-		got, err := ioutil.ReadAll(NewReader(buf))
+		got, err := io.ReadAll(NewReader(buf))
 		if err != nil {
 			t.Errorf("i=%#02x: ReadAll: %v", i, err)
 			continue
@@ -999,7 +999,7 @@ func TestReaderUncompressedDataOK(t *testing.T) {
 		"\x68\x10\xe6\xb6" + // Checksum.
 		"\x61\x62\x63\x64", // Uncompressed payload: "abcd".
 	))
-	g, err := ioutil.ReadAll(r)
+	g, err := io.ReadAll(r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1013,7 +1013,7 @@ func TestReaderUncompressedDataNoPayload(t *testing.T) {
 		"\x01\x04\x00\x00" + // Uncompressed chunk, 4 bytes long.
 		"", // No payload; corrupt input.
 	))
-	if _, err := ioutil.ReadAll(r); err != ErrCorrupt {
+	if _, err := io.ReadAll(r); err != ErrCorrupt {
 		t.Fatalf("got %v, want %v", err, ErrCorrupt)
 	}
 }
@@ -1028,7 +1028,7 @@ func TestReaderUncompressedDataTooLong(t *testing.T) {
 		strings.Repeat("\x00", n),
 	))
 	// CRC is not set, so we should expect that error.
-	if _, err := ioutil.ReadAll(r); err != ErrCRC {
+	if _, err := io.ReadAll(r); err != ErrCRC {
 		t.Fatalf("got %v, want %v", err, ErrCRC)
 	}
 
@@ -1040,7 +1040,7 @@ func TestReaderUncompressedDataTooLong(t *testing.T) {
 		string([]byte{chunkTypeUncompressedData, uint8(n32), uint8(n32 >> 8), uint8(n32 >> 16)}) +
 		strings.Repeat("\x00", n),
 	))
-	if _, err := ioutil.ReadAll(r); err != ErrCorrupt {
+	if _, err := io.ReadAll(r); err != ErrCorrupt {
 		t.Fatalf("got %v, want %v", err, ErrCorrupt)
 	}
 }
@@ -1070,7 +1070,7 @@ func TestReaderReset(t *testing.T) {
 			continue
 		}
 		r.Reset(strings.NewReader(s))
-		got, err := ioutil.ReadAll(r)
+		got, err := io.ReadAll(r)
 		switch s {
 		case encoded:
 			if err != nil {
@@ -1093,8 +1093,7 @@ func TestReaderReset(t *testing.T) {
 func TestWriterReset(t *testing.T) {
 	gold := bytes.Repeat([]byte("Not all those who wander are lost;\n"), 10000)
 	const n = 20
-	var w *Writer
-	w = NewWriter(nil)
+	w := NewWriter(nil)
 	defer w.Close()
 
 	var gots, wants [][]byte
@@ -1111,7 +1110,7 @@ func TestWriterReset(t *testing.T) {
 		if err := w.Flush(); err != nil {
 			t.Errorf("#%d: Flush: %v", i, err)
 			failed = true
-			got, err := ioutil.ReadAll(NewReader(buf))
+			got, err := io.ReadAll(NewReader(buf))
 			if err != nil {
 				t.Errorf("#%d: ReadAll: %v", i, err)
 				failed = true
@@ -1146,7 +1145,7 @@ func TestWriterResetWithoutFlush(t *testing.T) {
 	if err := w.Flush(); err != nil {
 		t.Fatalf("Flush: %v", err)
 	}
-	got, err := ioutil.ReadAll(NewReader(buf1))
+	got, err := io.ReadAll(NewReader(buf1))
 	if err != nil {
 		t.Fatalf("ReadAll: %v", err)
 	}
@@ -1218,9 +1217,21 @@ func testWriterRoundtrip(t *testing.T, src []byte, opts ...WriterOption) {
 		t.Error(err)
 		return
 	}
+	// Extra flush and close should be noops.
+	err = enc.Flush()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	err = enc.Close()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
 	t.Logf("encoded to %d -> %d bytes", len(src), buf.Len())
 	dec := NewReader(&buf)
-	decoded, err := ioutil.ReadAll(dec)
+	decoded, err := io.ReadAll(dec)
 	if err != nil {
 		t.Error(err)
 		return
@@ -1270,9 +1281,83 @@ func testBetterBlockRoundtrip(t *testing.T, src []byte) {
 		t.Error(err)
 	}
 }
+
+func testBestBlockRoundtrip(t *testing.T, src []byte) {
+	dst := EncodeBest(nil, src)
+	t.Logf("encoded to %d -> %d bytes", len(src), len(dst))
+	decoded, err := Decode(nil, dst)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if len(decoded) != len(src) {
+		t.Error("decoded len:", len(decoded), "!=", len(src))
+		return
+	}
+	err = cmp(src, decoded)
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func testSnappyBlockRoundtrip(t *testing.T, src []byte) {
+	// Write with s2, decode with snapref.
+	t.Run("regular", func(t *testing.T) {
+		dst := EncodeSnappy(nil, src)
+		t.Logf("encoded to %d -> %d bytes", len(src), len(dst))
+		decoded, err := snapref.Decode(nil, dst)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if len(decoded) != len(src) {
+			t.Error("decoded len:", len(decoded), "!=", len(src))
+			return
+		}
+		err = cmp(src, decoded)
+		if err != nil {
+			t.Error(err)
+		}
+	})
+	t.Run("better", func(t *testing.T) {
+		dst := EncodeSnappyBetter(nil, src)
+		t.Logf("encoded to %d -> %d bytes", len(src), len(dst))
+		decoded, err := snapref.Decode(nil, dst)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if len(decoded) != len(src) {
+			t.Error("decoded len:", len(decoded), "!=", len(src))
+			return
+		}
+		err = cmp(src, decoded)
+		if err != nil {
+			t.Error(err)
+		}
+	})
+	t.Run("best", func(t *testing.T) {
+		dst := EncodeSnappyBest(nil, src)
+		t.Logf("encoded to %d -> %d bytes", len(src), len(dst))
+		decoded, err := snapref.Decode(nil, dst)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if len(decoded) != len(src) {
+			t.Error("decoded len:", len(decoded), "!=", len(src))
+			return
+		}
+		err = cmp(src, decoded)
+		if err != nil {
+			t.Error(err)
+		}
+	})
+}
+
 func testSnappyDecode(t *testing.T, src []byte) {
 	var buf bytes.Buffer
-	enc := snappy.NewBufferedWriter(&buf)
+	enc := snapref.NewBufferedWriter(&buf)
 	n, err := enc.Write(src)
 	if err != nil {
 		t.Error(err)
@@ -1282,9 +1367,10 @@ func testSnappyDecode(t *testing.T, src []byte) {
 		t.Error(io.ErrShortWrite)
 		return
 	}
+	enc.Close()
 	t.Logf("encoded to %d -> %d bytes", len(src), buf.Len())
 	dec := NewReader(&buf)
-	decoded, err := ioutil.ReadAll(dec)
+	decoded, err := io.ReadAll(dec)
 	if err != nil {
 		t.Error(err)
 		return
@@ -1300,43 +1386,120 @@ func testSnappyDecode(t *testing.T, src []byte) {
 }
 
 func benchDecode(b *testing.B, src []byte) {
-	encoded := Encode(nil, src)
-	// Bandwidth is in amount of uncompressed data.
-	b.SetBytes(int64(len(src)))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		Decode(src, encoded)
-	}
-}
-
-func benchDecodeBetter(b *testing.B, src []byte) {
-	encoded := EncodeBetter(nil, src)
-	// Bandwidth is in amount of uncompressed data.
-	b.SetBytes(int64(len(src)))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		Decode(src, encoded)
-	}
+	b.Run("default", func(b *testing.B) {
+		encoded := Encode(nil, src)
+		b.SetBytes(int64(len(src)))
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, err := Decode(src[:0], encoded)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+		b.ReportMetric(100*float64(len(encoded))/float64(len(src)), "pct")
+	})
+	b.Run("better", func(b *testing.B) {
+		encoded := EncodeBetter(nil, src)
+		b.SetBytes(int64(len(src)))
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, err := Decode(src[:0], encoded)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+		b.ReportMetric(100*float64(len(encoded))/float64(len(src)), "pct")
+	})
+	b.Run("best", func(b *testing.B) {
+		encoded := EncodeBest(nil, src)
+		b.SetBytes(int64(len(src)))
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, err := Decode(src[:0], encoded)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+		b.ReportMetric(100*float64(len(encoded))/float64(len(src)), "pct")
+	})
+	b.Run("snappy-input", func(b *testing.B) {
+		encoded := snapref.Encode(nil, src)
+		b.SetBytes(int64(len(src)))
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, err := Decode(src[:0], encoded)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+		b.ReportMetric(100*float64(len(encoded))/float64(len(src)), "pct")
+	})
 }
 
 func benchEncode(b *testing.B, src []byte) {
 	// Bandwidth is in amount of uncompressed data.
-	b.SetBytes(int64(len(src)))
-	dst := make([]byte, MaxEncodedLen(len(src)))
+	dst := make([]byte, snapref.MaxEncodedLen(len(src)))
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		Encode(dst, src)
-	}
-}
-
-func benchEncodeBetter(b *testing.B, src []byte) {
-	// Bandwidth is in amount of uncompressed data.
-	b.SetBytes(int64(len(src)))
-	dst := make([]byte, MaxEncodedLen(len(src)))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		EncodeBetter(dst, src)
-	}
+	b.Run("default", func(b *testing.B) {
+		b.SetBytes(int64(len(src)))
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			Encode(dst, src)
+		}
+		b.ReportMetric(100*float64(len(Encode(dst, src)))/float64(len(src)), "pct")
+	})
+	b.Run("better", func(b *testing.B) {
+		b.SetBytes(int64(len(src)))
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			EncodeBetter(dst, src)
+		}
+		b.ReportMetric(100*float64(len(EncodeBetter(dst, src)))/float64(len(src)), "pct")
+	})
+	b.Run("best", func(b *testing.B) {
+		b.SetBytes(int64(len(src)))
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			EncodeBest(dst, src)
+		}
+		b.ReportMetric(100*float64(len(EncodeBest(dst, src)))/float64(len(src)), "pct")
+	})
+	b.Run("snappy-default", func(b *testing.B) {
+		b.SetBytes(int64(len(src)))
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			EncodeSnappy(dst, src)
+		}
+		b.ReportMetric(100*float64(len(EncodeSnappy(dst, src)))/float64(len(src)), "pct")
+	})
+	b.Run("snappy-better", func(b *testing.B) {
+		b.SetBytes(int64(len(src)))
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			EncodeSnappyBetter(dst, src)
+		}
+		b.ReportMetric(100*float64(len(EncodeSnappyBetter(dst, src)))/float64(len(src)), "pct")
+	})
+	b.Run("snappy-best", func(b *testing.B) {
+		b.SetBytes(int64(len(src)))
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			EncodeSnappyBest(dst, src)
+		}
+		b.ReportMetric(100*float64(len(EncodeSnappyBest(dst, src)))/float64(len(src)), "pct")
+	})
+	b.Run("snappy-ref-noasm", func(b *testing.B) {
+		b.SetBytes(int64(len(src)))
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			snapref.Encode(dst, src)
+		}
+		b.ReportMetric(100*float64(len(snapref.Encode(dst, src)))/float64(len(src)), "pct")
+	})
 }
 
 func testOrBenchmark(b testing.TB) string {
@@ -1347,7 +1510,7 @@ func testOrBenchmark(b testing.TB) string {
 }
 
 func readFile(b testing.TB, filename string) []byte {
-	src, err := ioutil.ReadFile(filename)
+	src, err := os.ReadFile(filename)
 	if err != nil {
 		b.Skipf("skipping %s: %v", testOrBenchmark(b), err)
 	}
@@ -1357,20 +1520,25 @@ func readFile(b testing.TB, filename string) []byte {
 	return src
 }
 
-// expand returns a slice of length n containing repeated copies of src.
+// expand returns a slice of length n containing mutated copies of src.
 func expand(src []byte, n int) []byte {
 	dst := make([]byte, n)
-	for x := dst; len(x) > 0; {
-		i := copy(x, src)
-		x = x[i:]
+	cnt := uint8(0)
+	for x := dst; len(x) > 0; cnt++ {
+		idx := copy(x, src)
+		for i := range x {
+			if i >= len(src) {
+				break
+			}
+			x[i] = src[i] ^ cnt
+		}
+		x = x[idx:]
 	}
 	return dst
 }
 
-func benchWords(b *testing.B, n int, decode bool) {
-	// Note: the file is OS-language dependent so the resulting values are not
-	// directly comparable for non-US-English OS installations.
-	data := expand(readFile(b, "/usr/share/dict/words"), n)
+func benchTwain(b *testing.B, n int, decode bool) {
+	data := expand(readFile(b, "../testdata/Mark.Twain-Tom.Sawyer.txt"), n)
 	if decode {
 		benchDecode(b, data)
 	} else {
@@ -1378,20 +1546,22 @@ func benchWords(b *testing.B, n int, decode bool) {
 	}
 }
 
-func BenchmarkWordsDecode1e1(b *testing.B) { benchWords(b, 1e1, true) }
-func BenchmarkWordsDecode1e2(b *testing.B) { benchWords(b, 1e2, true) }
-func BenchmarkWordsDecode1e3(b *testing.B) { benchWords(b, 1e3, true) }
-func BenchmarkWordsDecode1e4(b *testing.B) { benchWords(b, 1e4, true) }
-func BenchmarkWordsDecode1e5(b *testing.B) { benchWords(b, 1e5, true) }
-func BenchmarkWordsDecode1e6(b *testing.B) { benchWords(b, 1e6, true) }
-func BenchmarkWordsEncode1e1(b *testing.B) { benchWords(b, 1e1, false) }
-func BenchmarkWordsEncode1e2(b *testing.B) { benchWords(b, 1e2, false) }
-func BenchmarkWordsEncode1e3(b *testing.B) { benchWords(b, 1e3, false) }
-func BenchmarkWordsEncode1e4(b *testing.B) { benchWords(b, 1e4, false) }
-func BenchmarkWordsEncode1e5(b *testing.B) { benchWords(b, 1e5, false) }
-func BenchmarkWordsEncode1e6(b *testing.B) { benchWords(b, 1e6, false) }
+func BenchmarkTwainDecode1e1(b *testing.B) { benchTwain(b, 1e1, true) }
+func BenchmarkTwainDecode1e2(b *testing.B) { benchTwain(b, 1e2, true) }
+func BenchmarkTwainDecode1e3(b *testing.B) { benchTwain(b, 1e3, true) }
+func BenchmarkTwainDecode1e4(b *testing.B) { benchTwain(b, 1e4, true) }
+func BenchmarkTwainDecode1e5(b *testing.B) { benchTwain(b, 1e5, true) }
+func BenchmarkTwainDecode1e6(b *testing.B) { benchTwain(b, 1e6, true) }
+func BenchmarkTwainDecode1e7(b *testing.B) { benchTwain(b, 1e7, true) }
+func BenchmarkTwainEncode1e1(b *testing.B) { benchTwain(b, 1e1, false) }
+func BenchmarkTwainEncode1e2(b *testing.B) { benchTwain(b, 1e2, false) }
+func BenchmarkTwainEncode1e3(b *testing.B) { benchTwain(b, 1e3, false) }
+func BenchmarkTwainEncode1e4(b *testing.B) { benchTwain(b, 1e4, false) }
+func BenchmarkTwainEncode1e5(b *testing.B) { benchTwain(b, 1e5, false) }
+func BenchmarkTwainEncode1e6(b *testing.B) { benchTwain(b, 1e6, false) }
+func BenchmarkTwainEncode1e7(b *testing.B) { benchTwain(b, 1e7, false) }
 
-func BenchmarkRandomEncode(b *testing.B) {
+func BenchmarkRandomEncodeBlock1MB(b *testing.B) {
 	rng := rand.New(rand.NewSource(1))
 	data := make([]byte, 1<<20)
 	for i := range data {
@@ -1400,13 +1570,13 @@ func BenchmarkRandomEncode(b *testing.B) {
 	benchEncode(b, data)
 }
 
-func BenchmarkRandomEncodeBetter(b *testing.B) {
+func BenchmarkRandomEncodeBetterBlock16MB(b *testing.B) {
 	rng := rand.New(rand.NewSource(1))
-	data := make([]byte, 1<<20)
+	data := make([]byte, 16<<20)
 	for i := range data {
 		data[i] = uint8(rng.Intn(256))
 	}
-	benchEncodeBetter(b, data)
+	benchEncode(b, data)
 }
 
 // testFiles' values are copied directly from
@@ -1488,21 +1658,36 @@ func benchFile(b *testing.B, i int, decode bool) {
 	}
 	bDir := filepath.FromSlash(*benchdataDir)
 	data := readFile(b, filepath.Join(bDir, testFiles[i].filename))
-	var once sync.Once
+	if !decode {
+		b.Run("est-size", func(b *testing.B) {
+			if n := testFiles[i].sizeLimit; 0 < n && n < len(data) {
+				data = data[:n]
+			}
+			b.SetBytes(int64(len(data)))
+			b.ReportAllocs()
+			b.ResetTimer()
+			b.RunParallel(func(pb *testing.PB) {
+				for pb.Next() {
+					_ = EstimateBlockSize(data)
+				}
+			})
+			sz := float64(EstimateBlockSize(data))
+			if sz > 0 {
+				b.ReportMetric(100*sz/float64(len(data)), "pct")
+				b.ReportMetric(sz, "B")
+			}
+		})
+	}
 	b.Run("block", func(b *testing.B) {
 		if n := testFiles[i].sizeLimit; 0 < n && n < len(data) {
 			data = data[:n]
 		}
 		if decode {
 			b.SetBytes(int64(len(data)))
+			b.ReportAllocs()
 			b.ResetTimer()
 			b.RunParallel(func(pb *testing.PB) {
 				encoded := Encode(nil, data)
-				once.Do(func() {
-					if testing.Verbose() {
-						b.Log(len(encoded), " -> ", len(data))
-					}
-				})
 				tmp := make([]byte, len(data))
 				for pb.Next() {
 					var err error
@@ -1514,12 +1699,8 @@ func benchFile(b *testing.B, i int, decode bool) {
 			})
 		} else {
 			b.SetBytes(int64(len(data)))
+			b.ReportAllocs()
 			b.ResetTimer()
-			once.Do(func() {
-				if testing.Verbose() {
-					b.Log(len(data), " -> ", len(Encode(nil, data)))
-				}
-			})
 			b.RunParallel(func(pb *testing.PB) {
 				dst := make([]byte, MaxEncodedLen(len(data)))
 				tmp := make([]byte, len(data))
@@ -1537,20 +1718,17 @@ func benchFile(b *testing.B, i int, decode bool) {
 				}
 			})
 		}
+		b.ReportMetric(100*float64(len(Encode(nil, data)))/float64(len(data)), "pct")
+		b.ReportMetric(float64(len(Encode(nil, data))), "B")
 	})
-	once = sync.Once{}
 	b.Run("block-better", func(b *testing.B) {
 		if decode {
 			b.SetBytes(int64(len(data)))
+			b.ReportAllocs()
 			b.ResetTimer()
 			b.RunParallel(func(pb *testing.PB) {
 				encoded := EncodeBetter(nil, data)
 				tmp := make([]byte, len(data))
-				once.Do(func() {
-					if testing.Verbose() {
-						b.Log(len(encoded), " -> ", len(data))
-					}
-				})
 				for pb.Next() {
 					var err error
 					tmp, err = Decode(tmp, encoded)
@@ -1561,14 +1739,9 @@ func benchFile(b *testing.B, i int, decode bool) {
 			})
 		} else {
 			b.SetBytes(int64(len(data)))
+			b.ReportAllocs()
 			b.ResetTimer()
-
 			b.RunParallel(func(pb *testing.PB) {
-				once.Do(func() {
-					if testing.Verbose() {
-						b.Log(len(data), " -> ", len(EncodeBetter(nil, data)))
-					}
-				})
 				dst := make([]byte, MaxEncodedLen(len(data)))
 				tmp := make([]byte, len(data))
 				for pb.Next() {
@@ -1585,6 +1758,50 @@ func benchFile(b *testing.B, i int, decode bool) {
 				}
 			})
 		}
+		b.ReportMetric(100*float64(len(EncodeBetter(nil, data)))/float64(len(data)), "pct")
+		b.ReportMetric(float64(len(EncodeBetter(nil, data))), "B")
+	})
+
+	b.Run("block-best", func(b *testing.B) {
+		if decode {
+			b.SetBytes(int64(len(data)))
+			b.ReportAllocs()
+			b.ResetTimer()
+			b.RunParallel(func(pb *testing.PB) {
+				encoded := EncodeBest(nil, data)
+				tmp := make([]byte, len(data))
+				for pb.Next() {
+					var err error
+					tmp, err = Decode(tmp, encoded)
+					if err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+			b.ReportMetric(100*float64(len(EncodeBest(nil, data)))/float64(len(data)), "pct")
+		} else {
+			b.SetBytes(int64(len(data)))
+			b.ReportAllocs()
+			b.ResetTimer()
+			b.RunParallel(func(pb *testing.PB) {
+				dst := make([]byte, MaxEncodedLen(len(data)))
+				tmp := make([]byte, len(data))
+				for pb.Next() {
+					res := EncodeBest(dst, data)
+					if len(res) == 0 {
+						panic(0)
+					}
+					if false {
+						tmp, _ = Decode(tmp, res)
+						if !bytes.Equal(tmp, data) {
+							panic("wrong")
+						}
+					}
+				}
+			})
+			b.ReportMetric(100*float64(len(EncodeBest(nil, data)))/float64(len(data)), "pct")
+		}
+		b.ReportMetric(float64(len(EncodeBest(nil, data))), "B")
 	})
 }
 
@@ -1594,104 +1811,171 @@ func benchFileSnappy(b *testing.B, i int, decode bool) {
 	}
 	bDir := filepath.FromSlash(*benchdataDir)
 	data := readFile(b, filepath.Join(bDir, testFiles[i].filename))
-	var once sync.Once
 	if n := testFiles[i].sizeLimit; 0 < n && n < len(data) {
 		data = data[:n]
 	}
-	b.Run("snappy", func(b *testing.B) {
-		if decode {
-			b.SetBytes(int64(len(data)))
-			b.ResetTimer()
-			b.RunParallel(func(pb *testing.PB) {
-				encoded := snappy.Encode(nil, data)
-				once.Do(func() {
-					if testing.Verbose() {
-						b.Log(len(encoded), " -> ", len(data))
-					}
-				})
-				tmp := make([]byte, len(data))
-				for pb.Next() {
-					var err error
-					tmp, err = snappy.Decode(tmp, encoded)
-					if err != nil {
-						b.Fatal(err)
-					}
-				}
-			})
-		} else {
-			b.SetBytes(int64(len(data)))
-			b.ResetTimer()
-			once.Do(func() {
-				if testing.Verbose() {
-					b.Log(len(data), " -> ", len(snappy.Encode(nil, data)))
-				}
-			})
-			b.RunParallel(func(pb *testing.PB) {
-				dst := make([]byte, snappy.MaxEncodedLen(len(data)))
-				tmp := make([]byte, len(data))
-				for pb.Next() {
-					res := snappy.Encode(dst, data)
-					if len(res) == 0 {
-						panic(0)
-					}
-					if false {
-						tmp, _ = snappy.Decode(tmp, res)
-						if !bytes.Equal(tmp, data) {
-							panic("wrong")
-						}
-					}
-				}
-			})
-		}
-	})
-	once = sync.Once{}
+
 	b.Run("s2-snappy", func(b *testing.B) {
 		if decode {
 			b.SetBytes(int64(len(data)))
 			b.ResetTimer()
+			b.ReportAllocs()
 			b.RunParallel(func(pb *testing.PB) {
 				encoded := EncodeSnappy(nil, data)
-				once.Do(func() {
-					if testing.Verbose() {
-						b.Log(len(encoded), " -> ", len(data))
-					}
-				})
 				tmp := make([]byte, len(data))
 				for pb.Next() {
 					var err error
-					tmp, err = snappy.Decode(tmp, encoded)
+					tmp, err = Decode(tmp, encoded)
 					if err != nil {
 						b.Fatal(err)
 					}
 				}
 			})
+			b.ReportMetric(100*float64(len(EncodeSnappy(nil, data)))/float64(len(data)), "pct")
 		} else {
 			b.SetBytes(int64(len(data)))
+			b.ReportAllocs()
 			b.ResetTimer()
-			once.Do(func() {
-				if testing.Verbose() {
-					b.Log(len(data), " -> ", len(EncodeSnappy(nil, data)))
-				}
-			})
+
 			b.RunParallel(func(pb *testing.PB) {
-				dst := make([]byte, snappy.MaxEncodedLen(len(data)))
-				tmp := make([]byte, len(data))
+				dst := make([]byte, MaxEncodedLen(len(data)))
 				for pb.Next() {
 					res := EncodeSnappy(dst, data)
 					if len(res) == 0 {
 						panic(0)
 					}
+				}
+			})
+			b.ReportMetric(100*float64(len(EncodeSnappy(nil, data)))/float64(len(data)), "pct")
+		}
+		b.ReportMetric(float64(len(EncodeSnappy(nil, data))), "B")
+	})
+
+	b.Run("s2-snappy-better", func(b *testing.B) {
+		if decode {
+			b.SetBytes(int64(len(data)))
+			b.ResetTimer()
+			b.RunParallel(func(pb *testing.PB) {
+				encoded := EncodeSnappyBetter(nil, data)
+				tmp := make([]byte, len(data))
+				b.ReportAllocs()
+				b.ResetTimer()
+
+				for pb.Next() {
+					var err error
+					tmp, err = Decode(tmp, encoded)
+					if err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+			b.ReportMetric(100*float64(len(EncodeSnappyBetter(nil, data)))/float64(len(data)), "pct")
+		} else {
+			b.SetBytes(int64(len(data)))
+			b.ReportAllocs()
+			b.ResetTimer()
+			b.RunParallel(func(pb *testing.PB) {
+				dst := make([]byte, MaxEncodedLen(len(data)))
+				tmp := make([]byte, len(data))
+				for pb.Next() {
+					res := EncodeSnappyBetter(dst, data)
+					if len(res) == 0 {
+						panic(0)
+					}
 					if false {
-						tmp, _ = snappy.Decode(tmp, res)
+						tmp, _ = Decode(tmp, res)
 						if !bytes.Equal(tmp, data) {
 							panic("wrong")
 						}
 					}
 				}
 			})
+			b.ReportMetric(100*float64(len(EncodeSnappyBetter(nil, data)))/float64(len(data)), "pct")
+		}
+		b.ReportMetric(float64(len(EncodeSnappyBetter(nil, data))), "B")
+	})
+
+	b.Run("s2-snappy-best", func(b *testing.B) {
+		if decode {
+			b.SetBytes(int64(len(data)))
+			b.ReportAllocs()
+			b.ResetTimer()
+			b.RunParallel(func(pb *testing.PB) {
+				encoded := EncodeSnappyBest(nil, data)
+				tmp := make([]byte, len(data))
+				for pb.Next() {
+					var err error
+					tmp, err = Decode(tmp, encoded)
+					if err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+			b.ReportMetric(100*float64(len(EncodeSnappyBest(nil, data)))/float64(len(data)), "pct")
+		} else {
+			b.SetBytes(int64(len(data)))
+			b.ReportAllocs()
+			b.ResetTimer()
+			b.RunParallel(func(pb *testing.PB) {
+				dst := make([]byte, MaxEncodedLen(len(data)))
+				tmp := make([]byte, len(data))
+				for pb.Next() {
+					res := EncodeSnappyBest(dst, data)
+					if len(res) == 0 {
+						panic(0)
+					}
+					if false {
+						tmp, _ = snapref.Decode(tmp, res)
+						if !bytes.Equal(tmp, data) {
+							panic("wrong")
+						}
+					}
+				}
+			})
+			b.ReportMetric(100*float64(len(EncodeSnappyBest(nil, data)))/float64(len(data)), "pct")
+		}
+		b.ReportMetric(float64(len(EncodeSnappyBest(nil, data))), "B")
+	})
+	b.Run("snappy-noasm", func(b *testing.B) {
+		if decode {
+			b.SetBytes(int64(len(data)))
+			b.ReportAllocs()
+			b.ResetTimer()
+			b.RunParallel(func(pb *testing.PB) {
+				encoded := snapref.Encode(nil, data)
+				tmp := make([]byte, len(data))
+				for pb.Next() {
+					var err error
+					tmp, err = snapref.Decode(tmp, encoded)
+					if err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+			b.ReportMetric(100*float64(len(snapref.Encode(nil, data)))/float64(len(data)), "pct")
+		} else {
+			b.SetBytes(int64(len(data)))
+			b.ReportAllocs()
+			b.ResetTimer()
+			b.RunParallel(func(pb *testing.PB) {
+				dst := make([]byte, snapref.MaxEncodedLen(len(data)))
+				tmp := make([]byte, len(data))
+				for pb.Next() {
+					res := snapref.Encode(dst, data)
+					if len(res) == 0 {
+						panic(0)
+					}
+					if false {
+						tmp, _ = snapref.Decode(tmp, res)
+						if !bytes.Equal(tmp, data) {
+							panic("wrong")
+						}
+					}
+				}
+			})
+			b.ReportMetric(100*float64(len(snapref.Encode(nil, data)))/float64(len(data)), "pct")
 		}
 	})
-	fmt.Println("")
 }
 
 func TestRoundtrips(t *testing.T) {
@@ -1724,6 +2008,9 @@ func testFile(t *testing.T, i, repeat int) {
 	t.Run(fmt.Sprint(i, "-", testFiles[i].label), func(t *testing.T) {
 		bDir := filepath.FromSlash(*benchdataDir)
 		data := readFile(t, filepath.Join(bDir, testFiles[i].filename))
+		if testing.Short() && len(data) > 10000 {
+			t.SkipNow()
+		}
 		oSize := len(data)
 		for i := 0; i < repeat; i++ {
 			data = append(data, data[:oSize]...)
@@ -1734,6 +2021,12 @@ func testFile(t *testing.T, i, repeat int) {
 		t.Run("s2-better", func(t *testing.T) {
 			testWriterRoundtrip(t, data, WriterBetterCompression())
 		})
+		t.Run("s2-best", func(t *testing.T) {
+			testWriterRoundtrip(t, data, WriterBestCompression())
+		})
+		t.Run("s2-uncompressed", func(t *testing.T) {
+			testWriterRoundtrip(t, data, WriterUncompressed())
+		})
 		t.Run("block", func(t *testing.T) {
 			d := data
 			testBlockRoundtrip(t, d)
@@ -1741,6 +2034,14 @@ func testFile(t *testing.T, i, repeat int) {
 		t.Run("block-better", func(t *testing.T) {
 			d := data
 			testBetterBlockRoundtrip(t, d)
+		})
+		t.Run("block-best", func(t *testing.T) {
+			d := data
+			testBestBlockRoundtrip(t, d)
+		})
+		t.Run("s2-snappy", func(t *testing.T) {
+			d := data
+			testSnappyBlockRoundtrip(t, d)
 		})
 		t.Run("snappy", func(t *testing.T) {
 			testSnappyDecode(t, data)
@@ -1756,6 +2057,9 @@ func TestDataRoundtrips(t *testing.T) {
 		t.Run("s2-better", func(t *testing.T) {
 			testWriterRoundtrip(t, data, WriterBetterCompression())
 		})
+		t.Run("s2-best", func(t *testing.T) {
+			testWriterRoundtrip(t, data, WriterBestCompression())
+		})
 		t.Run("block", func(t *testing.T) {
 			d := data
 			testBlockRoundtrip(t, d)
@@ -1764,48 +2068,86 @@ func TestDataRoundtrips(t *testing.T) {
 			d := data
 			testBetterBlockRoundtrip(t, d)
 		})
+		t.Run("block-best", func(t *testing.T) {
+			d := data
+			testBestBlockRoundtrip(t, d)
+		})
+		t.Run("s2-snappy", func(t *testing.T) {
+			d := data
+			testSnappyBlockRoundtrip(t, d)
+		})
 		t.Run("snappy", func(t *testing.T) {
 			testSnappyDecode(t, data)
 		})
 	}
 	t.Run("longblock", func(t *testing.T) {
 		data := make([]byte, 1<<25)
+		if testing.Short() {
+			data = data[:1<<20]
+		}
 		test(t, data)
 	})
 	t.Run("4f9e1a0", func(t *testing.T) {
-		comp, _ := ioutil.ReadFile("testdata/4f9e1a0da7915a3d69632f5613ed78bc998a8a23.zst")
+		comp, _ := os.ReadFile("testdata/4f9e1a0da7915a3d69632f5613ed78bc998a8a23.zst")
 		dec, _ := zstd.NewReader(bytes.NewBuffer(comp))
-		data, _ := ioutil.ReadAll(dec)
+		data, _ := io.ReadAll(dec)
 		test(t, data)
 	})
+	data, err := os.ReadFile("testdata/enc_regressions.zip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range zr.File {
+		if !strings.HasSuffix(t.Name(), "") {
+			continue
+		}
+		t.Run(tt.Name, func(t *testing.T) {
+			r, err := tt.Open()
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			b, err := io.ReadAll(r)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			test(t, b[:len(b):len(b)])
+		})
+	}
+
 }
 
-func BenchmarkDecodeS2Block(b *testing.B) {
-	for i, _ := range testFiles {
+func BenchmarkDecodeS2BlockParallel(b *testing.B) {
+	for i := range testFiles {
 		b.Run(fmt.Sprint(i, "-", testFiles[i].label), func(b *testing.B) {
 			benchFile(b, i, true)
 		})
 	}
 }
 
-func BenchmarkEncodeS2Block(b *testing.B) {
-	for i, _ := range testFiles {
+func BenchmarkEncodeS2BlockParallel(b *testing.B) {
+	for i := range testFiles {
 		b.Run(fmt.Sprint(i, "-", testFiles[i].label), func(b *testing.B) {
 			benchFile(b, i, false)
 		})
 	}
 }
 
-func BenchmarkDecodeSnappyBlock(b *testing.B) {
-	for i, _ := range testFiles {
+func BenchmarkDecodeSnappyBlockParallel(b *testing.B) {
+	for i := range testFiles {
 		b.Run(fmt.Sprint(i, "-", testFiles[i].label), func(b *testing.B) {
 			benchFileSnappy(b, i, true)
 		})
 	}
 }
 
-func BenchmarkEncodeSnappyBlock(b *testing.B) {
-	for i, _ := range testFiles {
+func BenchmarkEncodeSnappyBlockParallel(b *testing.B) {
+	for i := range testFiles {
 		b.Run(fmt.Sprint(i, "-", testFiles[i].label), func(b *testing.B) {
 			benchFileSnappy(b, i, false)
 		})

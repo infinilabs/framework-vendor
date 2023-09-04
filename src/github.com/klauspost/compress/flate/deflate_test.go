@@ -9,7 +9,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -33,24 +33,24 @@ type reverseBitsTest struct {
 }
 
 var deflateTests = []*deflateTest{
-	{[]byte{}, 0, []byte{0x3, 0x0}},
-	{[]byte{0x11}, BestCompression, []byte{0x12, 0x4, 0xc, 0x0}},
-	{[]byte{0x11}, BestCompression, []byte{0x12, 0x4, 0xc, 0x0}},
-	{[]byte{0x11}, BestCompression, []byte{0x12, 0x4, 0xc, 0x0}},
+	0: {[]byte{}, 0, []byte{0x3, 0x0}},
+	1: {[]byte{0x11}, BestCompression, []byte{0x12, 0x4, 0xc, 0x0}},
+	2: {[]byte{0x11}, BestCompression, []byte{0x12, 0x4, 0xc, 0x0}},
+	3: {[]byte{0x11}, BestCompression, []byte{0x12, 0x4, 0xc, 0x0}},
 
-	{[]byte{0x11}, 0, []byte{0x0, 0x1, 0x0, 0xfe, 0xff, 0x11, 0x3, 0x0}},
-	{[]byte{0x11, 0x12}, 0, []byte{0x0, 0x2, 0x0, 0xfd, 0xff, 0x11, 0x12, 0x3, 0x0}},
-	{[]byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11}, 0,
+	4: {[]byte{0x11}, 0, []byte{0x0, 0x1, 0x0, 0xfe, 0xff, 0x11, 0x3, 0x0}},
+	5: {[]byte{0x11, 0x12}, 0, []byte{0x0, 0x2, 0x0, 0xfd, 0xff, 0x11, 0x12, 0x3, 0x0}},
+	6: {[]byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11}, 0,
 		[]byte{0x0, 0x8, 0x0, 0xf7, 0xff, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x3, 0x0},
 	},
-	{[]byte{}, 1, []byte{0x3, 0x0}},
-	{[]byte{0x11}, BestCompression, []byte{0x12, 0x4, 0xc, 0x0}},
-	{[]byte{0x11, 0x12}, BestCompression, []byte{0x12, 0x14, 0x2, 0xc, 0x0}},
-	{[]byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11}, BestCompression, []byte{0x12, 0x84, 0x2, 0xc0, 0x0}},
-	{[]byte{}, 9, []byte{0x3, 0x0}},
-	{[]byte{0x11}, 9, []byte{0x12, 0x4, 0xc, 0x0}},
-	{[]byte{0x11, 0x12}, 9, []byte{0x12, 0x14, 0x2, 0xc, 0x0}},
-	{[]byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11}, 9, []byte{0x12, 0x84, 0x2, 0xc0, 0x0}},
+	7:  {[]byte{}, 1, []byte{0x3, 0x0}},
+	8:  {[]byte{0x11}, BestCompression, []byte{0x12, 0x4, 0xc, 0x0}},
+	9:  {[]byte{0x11, 0x12}, BestCompression, []byte{0x12, 0x14, 0x2, 0xc, 0x0}},
+	10: {[]byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11}, BestCompression, []byte{0x12, 0x84, 0x1, 0xc0, 0x0}},
+	11: {[]byte{}, 9, []byte{0x3, 0x0}},
+	12: {[]byte{0x11}, 9, []byte{0x12, 0x4, 0xc, 0x0}},
+	13: {[]byte{0x11, 0x12}, 9, []byte{0x12, 0x14, 0x2, 0xc, 0x0}},
+	14: {[]byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11}, 9, []byte{0x12, 0x84, 0x1, 0xc0, 0x0}},
 }
 
 var deflateInflateTests = []*deflateInflateTest{
@@ -120,7 +120,7 @@ func TestDeflate(t *testing.T) {
 		w.Write(h.in)
 		w.Close()
 		if !bytes.Equal(buf.Bytes(), h.out) {
-			t.Errorf("%d: Deflate(%d, %x) = \n%#v, want \n%#v", i, h.level, h.in, buf.Bytes(), h.out)
+			t.Errorf("%d: Deflate(%d, %x) got \n%#v, want \n%#v", i, h.level, h.in, buf.Bytes(), h.out)
 		}
 	}
 }
@@ -157,7 +157,8 @@ func TestVeryLongSparseChunk(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping sparse chunk during short test")
 	}
-	w, err := NewWriter(ioutil.Discard, 1)
+	var buf bytes.Buffer
+	w, err := NewWriter(&buf, 1)
 	if err != nil {
 		t.Errorf("NewWriter: %v", err)
 		return
@@ -166,6 +167,7 @@ func TestVeryLongSparseChunk(t *testing.T) {
 		t.Errorf("Compress failed: %v", err)
 		return
 	}
+	t.Log("Length:", buf.Len())
 }
 
 type syncBuffer struct {
@@ -294,7 +296,7 @@ func testSync(t *testing.T, level int, input []byte, name string) {
 
 	// stream should work for ordinary reader too
 	r = NewReader(buf1)
-	out, err = ioutil.ReadAll(r)
+	out, err = io.ReadAll(r)
 	if err != nil {
 		t.Errorf("testSync: read: %s", err)
 		return
@@ -314,21 +316,23 @@ func testToFromWithLevelAndLimit(t *testing.T, level int, input []byte, name str
 	}
 	w.Write(input)
 	w.Close()
-	if limit > 0 && buffer.Len() > limit {
-		t.Errorf("level: %d, len(compress(data)) = %d > limit = %d", level, buffer.Len(), limit)
-		return
-	}
 	if limit > 0 {
 		t.Logf("level: %d - Size:%.2f%%, %d b\n", level, float64(buffer.Len()*100)/float64(limit), buffer.Len())
 	}
+	if limit > 0 && buffer.Len() > limit {
+		t.Errorf("level: %d, len(compress(data)) = %d > limit = %d", level, buffer.Len(), limit)
+	}
+
 	r := NewReader(&buffer)
-	out, err := ioutil.ReadAll(r)
+	out, err := io.ReadAll(r)
 	if err != nil {
 		t.Errorf("read: %s", err)
 		return
 	}
 	r.Close()
 	if !bytes.Equal(input, out) {
+		os.WriteFile("testdata/fails/"+t.Name()+".got", out, os.ModePerm)
+		os.WriteFile("testdata/fails/"+t.Name()+".want", input, os.ModePerm)
 		t.Errorf("decompress(compress(data)) != data: level=%d input=%s", level, name)
 		return
 	}
@@ -378,7 +382,7 @@ var deflateInflateStringTests = []deflateInflateStringTest{
 
 func TestDeflateInflateString(t *testing.T) {
 	for _, test := range deflateInflateStringTests {
-		gold, err := ioutil.ReadFile(test.filename)
+		gold, err := os.ReadFile(test.filename)
 		if err != nil {
 			t.Error(err)
 		}
@@ -415,7 +419,7 @@ func TestReaderDict(t *testing.T) {
 	w.Close()
 
 	r := NewReaderDict(&b, []byte(dict))
-	data, err := ioutil.ReadAll(r)
+	data, err := io.ReadAll(r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -461,7 +465,7 @@ func TestRegression2508(t *testing.T) {
 		t.Logf("test disabled with -short")
 		return
 	}
-	w, err := NewWriter(ioutil.Discard, 1)
+	w, err := NewWriter(io.Discard, 1)
 	if err != nil {
 		t.Fatalf("NewWriter: %v", err)
 	}
@@ -482,7 +486,7 @@ func TestWriterReset(t *testing.T) {
 		if testing.Short() && level > 1 {
 			break
 		}
-		w, err := NewWriter(ioutil.Discard, level)
+		w, err := NewWriter(io.Discard, level)
 		if err != nil {
 			t.Fatalf("NewWriter: %v", err)
 		}
@@ -490,9 +494,9 @@ func TestWriterReset(t *testing.T) {
 		for i := 0; i < 1024; i++ {
 			w.Write(buf)
 		}
-		w.Reset(ioutil.Discard)
+		w.Reset(io.Discard)
 
-		wref, err := NewWriter(ioutil.Discard, level)
+		wref, err := NewWriter(io.Discard, level)
 		if err != nil {
 			t.Fatalf("NewWriter: %v", err)
 		}
@@ -561,7 +565,7 @@ func testResetOutput(t *testing.T, name string, newWriter func(w io.Writer) (*Wr
 		if len(out1) != len(out2) {
 			t.Errorf("got %d, expected %d bytes", len(out2), len(out1))
 		}
-		if bytes.Compare(out1, out2) != 0 {
+		if !bytes.Equal(out1, out2) {
 			mm := 0
 			for i, b := range out1[:len(out2)] {
 				if b != out2[i] {
@@ -609,6 +613,9 @@ func TestBestSpeed(t *testing.T) {
 	}
 
 	for i, tc := range testCases {
+		if testing.Short() && i > 5 {
+			t.Skip()
+		}
 		for _, firstN := range []int{1, 65534, 65535, 65536, 65537, 131072} {
 			tc[0] = firstN
 		outer:
@@ -641,7 +648,7 @@ func TestBestSpeed(t *testing.T) {
 				}
 
 				r := NewReader(buf)
-				got, err := ioutil.ReadAll(r)
+				got, err := io.ReadAll(r)
 				if err != nil {
 					t.Errorf("i=%d, firstN=%d, flush=%t: ReadAll: %v", i, firstN, flush, err)
 					continue

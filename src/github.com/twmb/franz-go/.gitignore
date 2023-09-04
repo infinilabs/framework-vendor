@@ -1,0 +1,8 @@
+dev
+*.swp
+*TODO
+origin
+TESTING
+generate/generate
+go.work
+go.work.sum

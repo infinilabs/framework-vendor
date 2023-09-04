@@ -19,7 +19,7 @@ const (
 )
 
 const (
-	// defaultCommitRetries holds the number commit attempts to make
+	// defaultCommitRetries holds the number of commit attempts to make
 	// before giving up.
 	defaultCommitRetries = 3
 )
@@ -238,7 +238,7 @@ func (r *Reader) commitLoopInterval(ctx context.Context, gen *Generation) {
 
 	commit := func() {
 		if err := r.commitOffsetsWithRetry(gen, offsets, defaultCommitRetries); err != nil {
-			r.withErrorLogger(func(l Logger) { l.Printf(err.Error()) })
+			r.withErrorLogger(func(l Logger) { l.Printf("%v", err) })
 		} else {
 			offsets.reset()
 		}
@@ -277,7 +277,7 @@ func (r *Reader) commitLoop(ctx context.Context, gen *Generation) {
 		l.Printf("stopped commit for group %s\n", r.config.GroupID)
 	})
 
-	if r.config.CommitInterval == 0 {
+	if r.useSyncCommits() {
 		r.commitLoopImmediate(ctx, gen)
 	} else {
 		r.commitLoopInterval(ctx, gen)
@@ -311,7 +311,7 @@ func (r *Reader) run(cg *ConsumerGroup) {
 			}
 			r.stats.errors.observe(1)
 			r.withErrorLogger(func(l Logger) {
-				l.Printf(err.Error())
+				l.Printf("%v", err)
 			})
 			// Continue with next attempt...
 		}
@@ -397,6 +397,11 @@ type ReaderConfig struct {
 	//
 	// Default: 10s
 	MaxWait time.Duration
+
+	// ReadBatchTimeout amount of time to wait to fetch message from kafka messages batch.
+	//
+	// Default: 10s
+	ReadBatchTimeout time.Duration
 
 	// ReadLagInterval sets the frequency at which the reader lag is updated.
 	// Setting this field to a negative value disables lag reporting.
@@ -505,7 +510,7 @@ type ReaderConfig struct {
 	// non-transactional and committed records are visible.
 	IsolationLevel IsolationLevel
 
-	// Limit of how many attempts will be made before delivering the error.
+	// Limit of how many attempts to connect will be made before returning the error.
 	//
 	// The default is to try 3 times.
 	MaxAttempts int
@@ -649,6 +654,10 @@ func NewReader(config ReaderConfig) *Reader {
 		config.MaxWait = 10 * time.Second
 	}
 
+	if config.ReadBatchTimeout == 0 {
+		config.ReadBatchTimeout = 10 * time.Second
+	}
+
 	if config.ReadLagInterval == 0 {
 		config.ReadLagInterval = 1 * time.Minute
 	}
@@ -776,7 +785,7 @@ func (r *Reader) Close() error {
 // offset when called. Note that this could result in an offset being committed
 // before the message is fully processed.
 //
-// If more fine grained control of when offsets are  committed is required, it
+// If more fine-grained control of when offsets are committed is required, it
 // is recommended to use FetchMessage with CommitMessages instead.
 func (r *Reader) ReadMessage(ctx context.Context) (Message, error) {
 	m, err := r.FetchMessage(ctx)
@@ -1052,12 +1061,16 @@ func (r *Reader) SetOffsetAt(ctx context.Context, t time.Time) error {
 	}
 	r.mutex.Unlock()
 
+	if len(r.config.Brokers) < 1 {
+		return errors.New("no brokers in config")
+	}
+	var conn *Conn
+	var err error
 	for _, broker := range r.config.Brokers {
-		conn, err := r.config.Dialer.DialLeader(ctx, "tcp", broker, r.config.Topic, r.config.Partition)
+		conn, err = r.config.Dialer.DialLeader(ctx, "tcp", broker, r.config.Topic, r.config.Partition)
 		if err != nil {
 			continue
 		}
-
 		deadline, _ := ctx.Deadline()
 		conn.SetDeadline(deadline)
 		offset, err := conn.ReadOffset(t)
@@ -1068,7 +1081,7 @@ func (r *Reader) SetOffsetAt(ctx context.Context, t time.Time) error {
 
 		return r.SetOffset(offset)
 	}
-	return fmt.Errorf("error setting offset for timestamp %+v", t)
+	return fmt.Errorf("error dialing all brokers, one of the errors: %w", err)
 }
 
 // Stats returns a snapshot of the reader stats since the last time the method
@@ -1181,22 +1194,23 @@ func (r *Reader) start(offsetsByPartition map[topicPartition]int64) {
 			defer join.Done()
 
 			(&reader{
-				dialer:          r.config.Dialer,
-				logger:          r.config.Logger,
-				errorLogger:     r.config.ErrorLogger,
-				brokers:         r.config.Brokers,
-				topic:           key.topic,
-				partition:       int(key.partition),
-				minBytes:        r.config.MinBytes,
-				maxBytes:        r.config.MaxBytes,
-				maxWait:         r.config.MaxWait,
-				backoffDelayMin: r.config.ReadBackoffMin,
-				backoffDelayMax: r.config.ReadBackoffMax,
-				version:         r.version,
-				msgs:            r.msgs,
-				stats:           r.stats,
-				isolationLevel:  r.config.IsolationLevel,
-				maxAttempts:     r.config.MaxAttempts,
+				dialer:           r.config.Dialer,
+				logger:           r.config.Logger,
+				errorLogger:      r.config.ErrorLogger,
+				brokers:          r.config.Brokers,
+				topic:            key.topic,
+				partition:        int(key.partition),
+				minBytes:         r.config.MinBytes,
+				maxBytes:         r.config.MaxBytes,
+				maxWait:          r.config.MaxWait,
+				readBatchTimeout: r.config.ReadBatchTimeout,
+				backoffDelayMin:  r.config.ReadBackoffMin,
+				backoffDelayMax:  r.config.ReadBackoffMax,
+				version:          r.version,
+				msgs:             r.msgs,
+				stats:            r.stats,
+				isolationLevel:   r.config.IsolationLevel,
+				maxAttempts:      r.config.MaxAttempts,
 
 				// backwards-compatibility flags
 				offsetOutOfRangeError: r.config.OffsetOutOfRangeError,
@@ -1206,25 +1220,26 @@ func (r *Reader) start(offsetsByPartition map[topicPartition]int64) {
 }
 
 // A reader reads messages from kafka and produces them on its channels, it's
-// used as an way to asynchronously fetch messages while the main program reads
+// used as a way to asynchronously fetch messages while the main program reads
 // them using the high level reader API.
 type reader struct {
-	dialer          *Dialer
-	logger          Logger
-	errorLogger     Logger
-	brokers         []string
-	topic           string
-	partition       int
-	minBytes        int
-	maxBytes        int
-	maxWait         time.Duration
-	backoffDelayMin time.Duration
-	backoffDelayMax time.Duration
-	version         int64
-	msgs            chan<- readerMessage
-	stats           *readerStats
-	isolationLevel  IsolationLevel
-	maxAttempts     int
+	dialer           *Dialer
+	logger           Logger
+	errorLogger      Logger
+	brokers          []string
+	topic            string
+	partition        int
+	minBytes         int
+	maxBytes         int
+	maxWait          time.Duration
+	readBatchTimeout time.Duration
+	backoffDelayMin  time.Duration
+	backoffDelayMax  time.Duration
+	version          int64
+	msgs             chan<- readerMessage
+	stats            *readerStats
+	isolationLevel   IsolationLevel
+	maxAttempts      int
 
 	offsetOutOfRangeError bool
 }
@@ -1321,9 +1336,17 @@ func (r *reader) run(ctx context.Context, offset int64) {
 				errcount = 0
 				continue
 
+			case errors.Is(err, io.ErrNoProgress):
+				// This error is returned by the Conn when it believes the connection
+				// has been corrupted, so we need to explicitly close it. Since we are
+				// explicitly handling it and a retry will pick up, we can suppress the
+				// error metrics and logs for this case.
+				conn.Close()
+				break readLoop
+
 			case errors.Is(err, UnknownTopicOrPartition):
 				r.withErrorLogger(func(log Logger) {
-					log.Printf("failed to read from current broker for partition %d of %s at offset %d, topic or parition not found on this broker, %v", r.partition, r.topic, toHumanOffset(offset), r.brokers)
+					log.Printf("failed to read from current broker %v for partition %d of %s at offset %d: %v", r.brokers, r.partition, r.topic, toHumanOffset(offset), err)
 				})
 
 				conn.Close()
@@ -1335,7 +1358,7 @@ func (r *reader) run(ctx context.Context, offset int64) {
 
 			case errors.Is(err, NotLeaderForPartition):
 				r.withErrorLogger(func(log Logger) {
-					log.Printf("failed to read from current broker for partition %d of %s at offset %d, not the leader", r.partition, r.topic, toHumanOffset(offset))
+					log.Printf("failed to read from current broker for partition %d of %s at offset %d: %v", r.partition, r.topic, toHumanOffset(offset), err)
 				})
 
 				conn.Close()
@@ -1349,7 +1372,7 @@ func (r *reader) run(ctx context.Context, offset int64) {
 				// Timeout on the kafka side, this can be safely retried.
 				errcount = 0
 				r.withLogger(func(log Logger) {
-					log.Printf("no messages received from kafka within the allocated time for partition %d of %s at offset %d", r.partition, r.topic, toHumanOffset(offset))
+					log.Printf("no messages received from kafka within the allocated time for partition %d of %s at offset %d: %v", r.partition, r.topic, toHumanOffset(offset), err)
 				})
 				r.stats.timeouts.observe(1)
 				continue
@@ -1484,15 +1507,8 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 	var size int64
 	var bytes int64
 
-	const safetyTimeout = 10 * time.Second
-	deadline := time.Now().Add(safetyTimeout)
-	conn.SetReadDeadline(deadline)
-
 	for {
-		if now := time.Now(); deadline.Sub(now) < (safetyTimeout / 2) {
-			deadline = now.Add(safetyTimeout)
-			conn.SetReadDeadline(deadline)
-		}
+		conn.SetReadDeadline(time.Now().Add(r.readBatchTimeout))
 
 		if msg, err = batch.ReadMessage(); err != nil {
 			batch.Close()

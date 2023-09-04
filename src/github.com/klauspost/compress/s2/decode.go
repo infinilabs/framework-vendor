@@ -8,7 +8,8 @@ package s2
 import (
 	"encoding/binary"
 	"errors"
-	"io"
+	"fmt"
+	"strconv"
 )
 
 var (
@@ -20,8 +21,6 @@ var (
 	ErrTooLarge = errors.New("s2: decoded block is too large")
 	// ErrUnsupported reports that the input isn't supported.
 	ErrUnsupported = errors.New("s2: unsupported input")
-
-	errUnsupportedLiteralLength = errors.New("s2: unsupported literal length")
 )
 
 // DecodedLen returns the length of the decoded block.
@@ -46,8 +45,7 @@ func decodedLen(src []byte) (blockLen, headerLen int, err error) {
 }
 
 const (
-	decodeErrCodeCorrupt                  = 1
-	decodeErrCodeUnsupportedLiteralLength = 2
+	decodeErrCodeCorrupt = 1
 )
 
 // Decode returns the decoded form of src. The returned slice may be a sub-
@@ -65,339 +63,375 @@ func Decode(dst, src []byte) ([]byte, error) {
 	} else {
 		dst = make([]byte, dLen)
 	}
-	switch s2Decode(dst, src[s:]) {
-	case 0:
-		return dst, nil
-	case decodeErrCodeUnsupportedLiteralLength:
-		return nil, errUnsupportedLiteralLength
+	if s2Decode(dst, src[s:]) != 0 {
+		return nil, ErrCorrupt
 	}
-	return nil, ErrCorrupt
+	return dst, nil
 }
 
-// NewReader returns a new Reader that decompresses from r, using the framing
-// format described at
-// https://github.com/google/snappy/blob/master/framing_format.txt with S2 changes.
-func NewReader(r io.Reader) *Reader {
-	return &Reader{
-		r:   r,
-		buf: make([]byte, MaxEncodedLen(maxBlockSize)+checksumSize),
+// s2DecodeDict writes the decoding of src to dst. It assumes that the varint-encoded
+// length of the decompressed bytes has already been read, and that len(dst)
+// equals that length.
+//
+// It returns 0 on success or a decodeErrCodeXxx error code on failure.
+func s2DecodeDict(dst, src []byte, dict *Dict) int {
+	if dict == nil {
+		return s2Decode(dst, src)
 	}
-}
+	const debug = false
+	const debugErrs = debug
 
-// Reader is an io.Reader that can read Snappy-compressed bytes.
-type Reader struct {
-	r       io.Reader
-	err     error
-	decoded []byte
-	buf     []byte
-	// decoded[i:j] contains decoded bytes that have not yet been passed on.
-	i, j       int
-	readHeader bool
-}
-
-// Reset discards any buffered data, resets all state, and switches the Snappy
-// reader to read from r. This permits reusing a Reader rather than allocating
-// a new one.
-func (r *Reader) Reset(reader io.Reader) {
-	r.r = reader
-	r.err = nil
-	r.i = 0
-	r.j = 0
-	r.readHeader = false
-}
-
-func (r *Reader) readFull(p []byte, allowEOF bool) (ok bool) {
-	if _, r.err = io.ReadFull(r.r, p); r.err != nil {
-		if r.err == io.ErrUnexpectedEOF || (r.err == io.EOF && !allowEOF) {
-			r.err = ErrCorrupt
-		}
-		return false
+	if debug {
+		fmt.Println("Starting decode, dst len:", len(dst))
 	}
-	return true
-}
+	var d, s, length int
+	offset := len(dict.dict) - dict.repeat
 
-// Read satisfies the io.Reader interface.
-func (r *Reader) Read(p []byte) (int, error) {
-	if r.err != nil {
-		return 0, r.err
-	}
-	for {
-		if r.i < r.j {
-			n := copy(p, r.decoded[r.i:r.j])
-			r.i += n
-			return n, nil
-		}
-		if !r.readFull(r.buf[:4], true) {
-			return 0, r.err
-		}
-		chunkType := r.buf[0]
-		if !r.readHeader {
-			if chunkType != chunkTypeStreamIdentifier {
-				r.err = ErrCorrupt
-				return 0, r.err
+	// As long as we can read at least 5 bytes...
+	for s < len(src)-5 {
+		// Removing bounds checks is SLOWER, when if doing
+		// in := src[s:s+5]
+		// Checked on Go 1.18
+		switch src[s] & 0x03 {
+		case tagLiteral:
+			x := uint32(src[s] >> 2)
+			switch {
+			case x < 60:
+				s++
+			case x == 60:
+				s += 2
+				x = uint32(src[s-1])
+			case x == 61:
+				in := src[s : s+3]
+				x = uint32(in[1]) | uint32(in[2])<<8
+				s += 3
+			case x == 62:
+				in := src[s : s+4]
+				// Load as 32 bit and shift down.
+				x = uint32(in[0]) | uint32(in[1])<<8 | uint32(in[2])<<16 | uint32(in[3])<<24
+				x >>= 8
+				s += 4
+			case x == 63:
+				in := src[s : s+5]
+				x = uint32(in[1]) | uint32(in[2])<<8 | uint32(in[3])<<16 | uint32(in[4])<<24
+				s += 5
 			}
-			r.readHeader = true
-		}
-		chunkLen := int(r.buf[1]) | int(r.buf[2])<<8 | int(r.buf[3])<<16
-		if chunkLen > len(r.buf) {
-			r.err = ErrUnsupported
-			return 0, r.err
-		}
-
-		// The chunk types are specified at
-		// https://github.com/google/snappy/blob/master/framing_format.txt
-		switch chunkType {
-		case chunkTypeCompressedData:
-			// Section 4.2. Compressed data (chunk type 0x00).
-			if chunkLen < checksumSize {
-				r.err = ErrCorrupt
-				return 0, r.err
+			length = int(x) + 1
+			if debug {
+				fmt.Println("literals, length:", length, "d-after:", d+length)
 			}
-			buf := r.buf[:chunkLen]
-			if !r.readFull(buf, false) {
-				return 0, r.err
-			}
-			checksum := uint32(buf[0]) | uint32(buf[1])<<8 | uint32(buf[2])<<16 | uint32(buf[3])<<24
-			buf = buf[checksumSize:]
-
-			n, err := DecodedLen(buf)
-			if err != nil {
-				r.err = err
-				return 0, r.err
-			}
-			if n > len(r.decoded) {
-				if n > maxBlockSize {
-					r.err = ErrCorrupt
-					return 0, r.err
+			if length > len(dst)-d || length > len(src)-s || (strconv.IntSize == 32 && length <= 0) {
+				if debugErrs {
+					fmt.Println("corrupt literal: length:", length, "d-left:", len(dst)-d, "src-left:", len(src)-s)
 				}
-				r.decoded = make([]byte, n)
+				return decodeErrCodeCorrupt
 			}
-			if _, err := Decode(r.decoded, buf); err != nil {
-				r.err = err
-				return 0, r.err
-			}
-			if crc(r.decoded[:n]) != checksum {
-				r.err = ErrCRC
-				return 0, r.err
-			}
-			r.i, r.j = 0, n
+
+			copy(dst[d:], src[s:s+length])
+			d += length
+			s += length
 			continue
 
-		case chunkTypeUncompressedData:
-			// Section 4.3. Uncompressed data (chunk type 0x01).
-			if chunkLen < checksumSize {
-				r.err = ErrCorrupt
-				return 0, r.err
-			}
-			buf := r.buf[:checksumSize]
-			if !r.readFull(buf, false) {
-				return 0, r.err
-			}
-			checksum := uint32(buf[0]) | uint32(buf[1])<<8 | uint32(buf[2])<<16 | uint32(buf[3])<<24
-			// Read directly into r.decoded instead of via r.buf.
-			n := chunkLen - checksumSize
-			if n > len(r.decoded) {
-				if n > maxBlockSize {
-					r.err = ErrCorrupt
-					return 0, r.err
+		case tagCopy1:
+			s += 2
+			toffset := int(uint32(src[s-2])&0xe0<<3 | uint32(src[s-1]))
+			length = int(src[s-2]) >> 2 & 0x7
+			if toffset == 0 {
+				if debug {
+					fmt.Print("(repeat) ")
 				}
-				r.decoded = make([]byte, n)
-			}
-			if !r.readFull(r.decoded[:n], false) {
-				return 0, r.err
-			}
-			if crc(r.decoded[:n]) != checksum {
-				r.err = ErrCRC
-				return 0, r.err
-			}
-			r.i, r.j = 0, n
-			continue
-
-		case chunkTypeStreamIdentifier:
-			// Section 4.1. Stream identifier (chunk type 0xff).
-			if chunkLen != len(magicBody) {
-				r.err = ErrCorrupt
-				return 0, r.err
-			}
-			if !r.readFull(r.buf[:len(magicBody)], false) {
-				return 0, r.err
-			}
-			if string(r.buf[:len(magicBody)]) != magicBody {
-				if string(r.buf[:len(magicBody)]) != magicBodySnappy {
-					r.err = ErrCorrupt
-					return 0, r.err
-				}
-			}
-			continue
-		}
-
-		if chunkType <= 0x7f {
-			// Section 4.5. Reserved unskippable chunks (chunk types 0x02-0x7f).
-			r.err = ErrUnsupported
-			return 0, r.err
-		}
-		// Section 4.4 Padding (chunk type 0xfe).
-		// Section 4.6. Reserved skippable chunks (chunk types 0x80-0xfd).
-		if !r.readFull(r.buf[:chunkLen], false) {
-			return 0, r.err
-		}
-	}
-}
-
-// Skip will skip n bytes forward in the decompressed output.
-// For larger skips this consumes less CPU and is faster than reading output and discarding it.
-// CRC is not checked on skipped blocks.
-// io.ErrUnexpectedEOF is returned if the stream ends before all bytes have been skipped.
-// If a decoding error is encountered subsequent calls to Read will also fail.
-func (r *Reader) Skip(n int64) error {
-	if n < 0 {
-		return errors.New("attempted negative skip")
-	}
-	if r.err != nil {
-		return r.err
-	}
-
-	for n > 0 {
-		if r.i < r.j {
-			// Skip in buffer.
-			// decoded[i:j] contains decoded bytes that have not yet been passed on.
-			left := int64(r.j - r.i)
-			if left >= n {
-				r.i += int(n)
-				return nil
-			}
-			n -= int64(r.j - r.i)
-			r.i, r.j = 0, 0
-		}
-
-		// Buffer empty; read blocks until we have content.
-		if !r.readFull(r.buf[:4], true) {
-			if r.err == io.EOF {
-				r.err = io.ErrUnexpectedEOF
-			}
-			return r.err
-		}
-		chunkType := r.buf[0]
-		if !r.readHeader {
-			if chunkType != chunkTypeStreamIdentifier {
-				r.err = ErrCorrupt
-				return r.err
-			}
-			r.readHeader = true
-		}
-		chunkLen := int(r.buf[1]) | int(r.buf[2])<<8 | int(r.buf[3])<<16
-		if chunkLen > len(r.buf) {
-			r.err = ErrUnsupported
-			return r.err
-		}
-
-		// The chunk types are specified at
-		// https://github.com/google/snappy/blob/master/framing_format.txt
-		switch chunkType {
-		case chunkTypeCompressedData:
-			// Section 4.2. Compressed data (chunk type 0x00).
-			if chunkLen < checksumSize {
-				r.err = ErrCorrupt
-				return r.err
-			}
-			buf := r.buf[:chunkLen]
-			if !r.readFull(buf, false) {
-				return r.err
-			}
-			checksum := uint32(buf[0]) | uint32(buf[1])<<8 | uint32(buf[2])<<16 | uint32(buf[3])<<24
-			buf = buf[checksumSize:]
-
-			dLen, err := DecodedLen(buf)
-			if err != nil {
-				r.err = err
-				return r.err
-			}
-			if dLen > maxBlockSize {
-				r.err = ErrCorrupt
-				return r.err
-			}
-			// Check if destination is within this block
-			if int64(dLen) > n {
-				if len(r.decoded) < dLen {
-					r.decoded = make([]byte, dLen)
-				}
-				if _, err := Decode(r.decoded, buf); err != nil {
-					r.err = err
-					return r.err
-				}
-				if crc(r.decoded[:dLen]) != checksum {
-					r.err = ErrCorrupt
-					return r.err
+				// keep last offset
+				switch length {
+				case 5:
+					length = int(src[s]) + 4
+					s += 1
+				case 6:
+					in := src[s : s+2]
+					length = int(uint32(in[0])|(uint32(in[1])<<8)) + (1 << 8)
+					s += 2
+				case 7:
+					in := src[s : s+3]
+					length = int((uint32(in[2])<<16)|(uint32(in[1])<<8)|uint32(in[0])) + (1 << 16)
+					s += 3
+				default: // 0-> 4
 				}
 			} else {
-				// Skip block completely
-				n -= int64(dLen)
-				dLen = 0
+				offset = toffset
 			}
-			r.i, r.j = 0, dLen
-			continue
-		case chunkTypeUncompressedData:
-			// Section 4.3. Uncompressed data (chunk type 0x01).
-			if chunkLen < checksumSize {
-				r.err = ErrCorrupt
-				return r.err
-			}
-			buf := r.buf[:checksumSize]
-			if !r.readFull(buf, false) {
-				return r.err
-			}
-			checksum := uint32(buf[0]) | uint32(buf[1])<<8 | uint32(buf[2])<<16 | uint32(buf[3])<<24
-			// Read directly into r.decoded instead of via r.buf.
-			n2 := chunkLen - checksumSize
-			if n2 > len(r.decoded) {
-				if n2 > maxBlockSize {
-					r.err = ErrCorrupt
-					return r.err
-				}
-				r.decoded = make([]byte, n2)
-			}
-			if !r.readFull(r.decoded[:n2], false) {
-				return r.err
-			}
-			if int64(n2) < n {
-				if crc(r.decoded[:n2]) != checksum {
-					r.err = ErrCorrupt
-					return r.err
-				}
-			}
-			r.i, r.j = 0, n2
-			continue
-		case chunkTypeStreamIdentifier:
-			// Section 4.1. Stream identifier (chunk type 0xff).
-			if chunkLen != len(magicBody) {
-				r.err = ErrCorrupt
-				return r.err
-			}
-			if !r.readFull(r.buf[:len(magicBody)], false) {
-				return r.err
-			}
-			if string(r.buf[:len(magicBody)]) != magicBody {
-				if string(r.buf[:len(magicBody)]) != magicBodySnappy {
-					r.err = ErrCorrupt
-					return r.err
-				}
-			}
+			length += 4
+		case tagCopy2:
+			in := src[s : s+3]
+			offset = int(uint32(in[1]) | uint32(in[2])<<8)
+			length = 1 + int(in[0])>>2
+			s += 3
 
+		case tagCopy4:
+			in := src[s : s+5]
+			offset = int(uint32(in[1]) | uint32(in[2])<<8 | uint32(in[3])<<16 | uint32(in[4])<<24)
+			length = 1 + int(in[0])>>2
+			s += 5
+		}
+
+		if offset <= 0 || length > len(dst)-d {
+			if debugErrs {
+				fmt.Println("match error; offset:", offset, "length:", length, "dst-left:", len(dst)-d)
+			}
+			return decodeErrCodeCorrupt
+		}
+
+		// copy from dict
+		if d < offset {
+			if d > MaxDictSrcOffset {
+				if debugErrs {
+					fmt.Println("dict after", MaxDictSrcOffset, "d:", d, "offset:", offset, "length:", length)
+				}
+				return decodeErrCodeCorrupt
+			}
+			startOff := len(dict.dict) - offset + d
+			if startOff < 0 || startOff+length > len(dict.dict) {
+				if debugErrs {
+					fmt.Printf("offset (%d) + length (%d) bigger than dict (%d)\n", offset, length, len(dict.dict))
+				}
+				return decodeErrCodeCorrupt
+			}
+			if debug {
+				fmt.Println("dict copy, length:", length, "offset:", offset, "d-after:", d+length, "dict start offset:", startOff)
+			}
+			copy(dst[d:d+length], dict.dict[startOff:])
+			d += length
 			continue
 		}
 
-		if chunkType <= 0x7f {
-			// Section 4.5. Reserved unskippable chunks (chunk types 0x02-0x7f).
-			r.err = ErrUnsupported
-			return r.err
-		}
-		// Section 4.4 Padding (chunk type 0xfe).
-		// Section 4.6. Reserved skippable chunks (chunk types 0x80-0xfd).
-		if !r.readFull(r.buf[:chunkLen], false) {
-			return r.err
+		if debug {
+			fmt.Println("copy, length:", length, "offset:", offset, "d-after:", d+length)
 		}
 
-		return io.ErrUnexpectedEOF
+		// Copy from an earlier sub-slice of dst to a later sub-slice.
+		// If no overlap, use the built-in copy:
+		if offset > length {
+			copy(dst[d:d+length], dst[d-offset:])
+			d += length
+			continue
+		}
+
+		// Unlike the built-in copy function, this byte-by-byte copy always runs
+		// forwards, even if the slices overlap. Conceptually, this is:
+		//
+		// d += forwardCopy(dst[d:d+length], dst[d-offset:])
+		//
+		// We align the slices into a and b and show the compiler they are the same size.
+		// This allows the loop to run without bounds checks.
+		a := dst[d : d+length]
+		b := dst[d-offset:]
+		b = b[:len(a)]
+		for i := range a {
+			a[i] = b[i]
+		}
+		d += length
 	}
-	return nil
+
+	// Remaining with extra checks...
+	for s < len(src) {
+		switch src[s] & 0x03 {
+		case tagLiteral:
+			x := uint32(src[s] >> 2)
+			switch {
+			case x < 60:
+				s++
+			case x == 60:
+				s += 2
+				if uint(s) > uint(len(src)) { // The uint conversions catch overflow from the previous line.
+					if debugErrs {
+						fmt.Println("src went oob")
+					}
+					return decodeErrCodeCorrupt
+				}
+				x = uint32(src[s-1])
+			case x == 61:
+				s += 3
+				if uint(s) > uint(len(src)) { // The uint conversions catch overflow from the previous line.
+					if debugErrs {
+						fmt.Println("src went oob")
+					}
+					return decodeErrCodeCorrupt
+				}
+				x = uint32(src[s-2]) | uint32(src[s-1])<<8
+			case x == 62:
+				s += 4
+				if uint(s) > uint(len(src)) { // The uint conversions catch overflow from the previous line.
+					if debugErrs {
+						fmt.Println("src went oob")
+					}
+					return decodeErrCodeCorrupt
+				}
+				x = uint32(src[s-3]) | uint32(src[s-2])<<8 | uint32(src[s-1])<<16
+			case x == 63:
+				s += 5
+				if uint(s) > uint(len(src)) { // The uint conversions catch overflow from the previous line.
+					if debugErrs {
+						fmt.Println("src went oob")
+					}
+					return decodeErrCodeCorrupt
+				}
+				x = uint32(src[s-4]) | uint32(src[s-3])<<8 | uint32(src[s-2])<<16 | uint32(src[s-1])<<24
+			}
+			length = int(x) + 1
+			if length > len(dst)-d || length > len(src)-s || (strconv.IntSize == 32 && length <= 0) {
+				if debugErrs {
+					fmt.Println("corrupt literal: length:", length, "d-left:", len(dst)-d, "src-left:", len(src)-s)
+				}
+				return decodeErrCodeCorrupt
+			}
+			if debug {
+				fmt.Println("literals, length:", length, "d-after:", d+length)
+			}
+
+			copy(dst[d:], src[s:s+length])
+			d += length
+			s += length
+			continue
+
+		case tagCopy1:
+			s += 2
+			if uint(s) > uint(len(src)) { // The uint conversions catch overflow from the previous line.
+				if debugErrs {
+					fmt.Println("src went oob")
+				}
+				return decodeErrCodeCorrupt
+			}
+			length = int(src[s-2]) >> 2 & 0x7
+			toffset := int(uint32(src[s-2])&0xe0<<3 | uint32(src[s-1]))
+			if toffset == 0 {
+				if debug {
+					fmt.Print("(repeat) ")
+				}
+				// keep last offset
+				switch length {
+				case 5:
+					s += 1
+					if uint(s) > uint(len(src)) { // The uint conversions catch overflow from the previous line.
+						if debugErrs {
+							fmt.Println("src went oob")
+						}
+						return decodeErrCodeCorrupt
+					}
+					length = int(uint32(src[s-1])) + 4
+				case 6:
+					s += 2
+					if uint(s) > uint(len(src)) { // The uint conversions catch overflow from the previous line.
+						if debugErrs {
+							fmt.Println("src went oob")
+						}
+						return decodeErrCodeCorrupt
+					}
+					length = int(uint32(src[s-2])|(uint32(src[s-1])<<8)) + (1 << 8)
+				case 7:
+					s += 3
+					if uint(s) > uint(len(src)) { // The uint conversions catch overflow from the previous line.
+						if debugErrs {
+							fmt.Println("src went oob")
+						}
+						return decodeErrCodeCorrupt
+					}
+					length = int(uint32(src[s-3])|(uint32(src[s-2])<<8)|(uint32(src[s-1])<<16)) + (1 << 16)
+				default: // 0-> 4
+				}
+			} else {
+				offset = toffset
+			}
+			length += 4
+		case tagCopy2:
+			s += 3
+			if uint(s) > uint(len(src)) { // The uint conversions catch overflow from the previous line.
+				if debugErrs {
+					fmt.Println("src went oob")
+				}
+				return decodeErrCodeCorrupt
+			}
+			length = 1 + int(src[s-3])>>2
+			offset = int(uint32(src[s-2]) | uint32(src[s-1])<<8)
+
+		case tagCopy4:
+			s += 5
+			if uint(s) > uint(len(src)) { // The uint conversions catch overflow from the previous line.
+				if debugErrs {
+					fmt.Println("src went oob")
+				}
+				return decodeErrCodeCorrupt
+			}
+			length = 1 + int(src[s-5])>>2
+			offset = int(uint32(src[s-4]) | uint32(src[s-3])<<8 | uint32(src[s-2])<<16 | uint32(src[s-1])<<24)
+		}
+
+		if offset <= 0 || length > len(dst)-d {
+			if debugErrs {
+				fmt.Println("match error; offset:", offset, "length:", length, "dst-left:", len(dst)-d)
+			}
+			return decodeErrCodeCorrupt
+		}
+
+		// copy from dict
+		if d < offset {
+			if d > MaxDictSrcOffset {
+				if debugErrs {
+					fmt.Println("dict after", MaxDictSrcOffset, "d:", d, "offset:", offset, "length:", length)
+				}
+				return decodeErrCodeCorrupt
+			}
+			rOff := len(dict.dict) - (offset - d)
+			if debug {
+				fmt.Println("starting dict entry from dict offset", len(dict.dict)-rOff)
+			}
+			if rOff+length > len(dict.dict) {
+				if debugErrs {
+					fmt.Println("err: END offset", rOff+length, "bigger than dict", len(dict.dict), "dict offset:", rOff, "length:", length)
+				}
+				return decodeErrCodeCorrupt
+			}
+			if rOff < 0 {
+				if debugErrs {
+					fmt.Println("err: START offset", rOff, "less than 0", len(dict.dict), "dict offset:", rOff, "length:", length)
+				}
+				return decodeErrCodeCorrupt
+			}
+			copy(dst[d:d+length], dict.dict[rOff:])
+			d += length
+			continue
+		}
+
+		if debug {
+			fmt.Println("copy, length:", length, "offset:", offset, "d-after:", d+length)
+		}
+
+		// Copy from an earlier sub-slice of dst to a later sub-slice.
+		// If no overlap, use the built-in copy:
+		if offset > length {
+			copy(dst[d:d+length], dst[d-offset:])
+			d += length
+			continue
+		}
+
+		// Unlike the built-in copy function, this byte-by-byte copy always runs
+		// forwards, even if the slices overlap. Conceptually, this is:
+		//
+		// d += forwardCopy(dst[d:d+length], dst[d-offset:])
+		//
+		// We align the slices into a and b and show the compiler they are the same size.
+		// This allows the loop to run without bounds checks.
+		a := dst[d : d+length]
+		b := dst[d-offset:]
+		b = b[:len(a)]
+		for i := range a {
+			a[i] = b[i]
+		}
+		d += length
+	}
+
+	if d != len(dst) {
+		if debugErrs {
+			fmt.Println("wanted length", len(dst), "got", d)
+		}
+		return decodeErrCodeCorrupt
+	}
+	return 0
 }
