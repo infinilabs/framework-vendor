@@ -4,6 +4,7 @@
 package mem
 
 import (
+	"context"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -107,6 +108,16 @@ var virtualMemoryTests = []struct {
 			HugePageSize:   0,
 		},
 	},
+	{
+		"anonhugepages", &VirtualMemoryStat{
+			Total:         260799420 * 1024,
+			Available:     127880216 * 1024,
+			Free:          119443248 * 1024,
+			AnonHugePages: 50409472 * 1024,
+			Used:          144748720128,
+			UsedPercent:   54.20110673559013,
+		},
+	},
 }
 
 func TestVirtualMemoryLinux(t *testing.T) {
@@ -138,7 +149,7 @@ const invalidFile = `INVALID				Type		Size		Used		Priority
 
 func TestParseSwapsFile_ValidFile(t *testing.T) {
 	assert := assert.New(t)
-	stats, err := parseSwapsFile(strings.NewReader(validFile))
+	stats, err := parseSwapsFile(context.Background(), strings.NewReader(validFile))
 	assert.NoError(err)
 
 	assert.Equal(*stats[0], SwapDevice{
@@ -155,11 +166,11 @@ func TestParseSwapsFile_ValidFile(t *testing.T) {
 }
 
 func TestParseSwapsFile_InvalidFile(t *testing.T) {
-	_, err := parseSwapsFile(strings.NewReader(invalidFile))
+	_, err := parseSwapsFile(context.Background(), strings.NewReader(invalidFile))
 	assert.Error(t, err)
 }
 
 func TestParseSwapsFile_EmptyFile(t *testing.T) {
-	_, err := parseSwapsFile(strings.NewReader(""))
+	_, err := parseSwapsFile(context.Background(), strings.NewReader(""))
 	assert.Error(t, err)
 }
