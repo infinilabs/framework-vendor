@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build ignore
+//go:build ignore
 
 //go:generate go run gen.go
 //go:generate go run gen.go -test
@@ -684,7 +684,7 @@ var extra = []string{
 	"frame",
 	"frameset",
 	"image",
-	"isindex",
+	"isindex", // "isindex" has been removed from the spec, but are kept here for backwards compatibility.
 	"listing",
 	"malignmark",
 	"marquee",

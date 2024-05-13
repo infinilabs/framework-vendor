@@ -69,6 +69,12 @@ var proxyForURLTests = []proxyForURLTest{{
 	},
 	want: "http://cache.corp.example.com",
 }, {
+	// single label domain is recognized as scheme by url.Parse
+	cfg: httpproxy.Config{
+		HTTPProxy: "localhost",
+	},
+	want: "http://localhost",
+}, {
 	cfg: httpproxy.Config{
 		HTTPProxy: "https://cache.corp.example.com",
 	},
@@ -88,6 +94,12 @@ var proxyForURLTests = []proxyForURLTest{{
 		HTTPProxy: "socks5://127.0.0.1",
 	},
 	want: "socks5://127.0.0.1",
+}, {
+	// Preserve unknown schemes.
+	cfg: httpproxy.Config{
+		HTTPProxy: "foo://host",
+	},
+	want: "foo://host",
 }, {
 	// Don't use secure for http
 	cfg: httpproxy.Config{
@@ -111,6 +123,18 @@ var proxyForURLTests = []proxyForURLTest{{
 	},
 	req:  "https://secure.tld/",
 	want: "https://secure.proxy.tld",
+}, {
+	cfg: httpproxy.Config{
+		HTTPProxy: "http.proxy.tld",
+	},
+	req:  "https://secure.tld/",
+	want: "<nil>",
+}, {
+	cfg: httpproxy.Config{
+		HTTPProxy: "http.proxy.tld",
+	},
+	req:  "ftp://insecure.tld/",
+	want: "<nil>",
 }, {
 	// Issue 16405: don't use HTTP_PROXY in a CGI environment,
 	// where HTTP_PROXY can be attacker-controlled.
@@ -166,7 +190,29 @@ var proxyForURLTests = []proxyForURLTest{{
 	},
 	req:  "http://example.com/",
 	want: "http://proxy",
-}}
+}, {
+	cfg: httpproxy.Config{
+		NoProxy:   ".示例.com",
+		HTTPProxy: "proxy",
+	},
+	req:  "http://www.示例.com",
+	want: "<nil>",
+}, {
+	cfg: httpproxy.Config{
+		NoProxy:   "xn--fsq092h.com",
+		HTTPProxy: "proxy",
+	},
+	req:  "http://www.示例.com",
+	want: "<nil>",
+}, {
+	cfg: httpproxy.Config{
+		NoProxy:   "示例.com",
+		HTTPProxy: "proxy",
+	},
+	req:  "http://www.xn--fsq092h.com",
+	want: "<nil>",
+},
+}
 
 func testProxyForURL(t *testing.T, tt proxyForURLTest) {
 	setHelper(t)
