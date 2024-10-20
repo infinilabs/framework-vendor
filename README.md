@@ -13,30 +13,22 @@ Vendoring dependencies offers several benefits:
 
 ## How to Add a New Vendor
 
-### Fetch the Vendor
-
 Run the following command to fetch the vendor:
 
 ```bash
 go get -u github.com/vendor/repo
+```
 
-The vendor files will be located in the ~/go/src directory.
+The vendor files will be located in the `~/go/src` directory.
 
-Remove .git Submodules
-
-To clean up the .git repositories from all submodules, run this command:
-
+Clean up the `.git` repositories from all submodules, run this command (exclude `infini.sh` folder):
+```
 find . -type d -name ".git" -exec rm -rf {} +
+```
 
-Copy Vendor Files to vendor Directory
-
-Move the necessary vendor files to the vendor directory in your project.
-
-Commit the Vendor
+Move the necessary vendor files to the `vendor` directory into repo.
 
 After adding the files to vendor, commit them to your repository.
 
-Cleanup Unneeded Vendor Files
-
-Once the vendor files are copied, you can clean up the files located in ~/go/src, except for the infini.sh folder.
+Once the vendor files are copied, you can clean up the files located in `~/go/src`, except for the `infini.sh` folder.
 
