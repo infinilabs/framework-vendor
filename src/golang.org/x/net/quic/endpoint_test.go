@@ -13,6 +13,7 @@ import (
 	"io"
 	"log/slog"
 	"net/netip"
+	"runtime"
 	"testing"
 	"time"
 
@@ -21,6 +22,12 @@ import (
 
 func TestConnect(t *testing.T) {
 	newLocalConnPair(t, &Config{}, &Config{})
+}
+
+func TestConnectDefaultTLSConfig(t *testing.T) {
+	serverConfig := newTestTLSConfigWithMoreDefaults(serverSide)
+	clientConfig := newTestTLSConfigWithMoreDefaults(clientSide)
+	newLocalConnPair(t, &Config{TLSConfig: serverConfig}, &Config{TLSConfig: clientConfig})
 }
 
 func TestStreamTransfer(t *testing.T) {
@@ -63,6 +70,10 @@ func TestStreamTransfer(t *testing.T) {
 }
 
 func newLocalConnPair(t testing.TB, conf1, conf2 *Config) (clientConn, serverConn *Conn) {
+	switch runtime.GOOS {
+	case "plan9":
+		t.Skipf("ReadMsgUDP not supported on %s", runtime.GOOS)
+	}
 	t.Helper()
 	ctx := context.Background()
 	e1 := newLocalEndpoint(t, serverSide, conf1)

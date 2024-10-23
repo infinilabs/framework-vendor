@@ -1,5 +1,5 @@
 // This file is generated with "go test -tags generate". DO NOT EDIT!
-// +build !generate
+//go:build !generate
 
 package triegen_test
 

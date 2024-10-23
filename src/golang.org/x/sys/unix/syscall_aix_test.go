@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build aix
-// +build aix
 
 package unix_test
 
@@ -60,7 +59,7 @@ func TestTime(t *testing.T) {
 }
 
 func TestUtime(t *testing.T) {
-	defer chtmpdir(t)()
+	chtmpdir(t)
 
 	touch(t, "file1")
 

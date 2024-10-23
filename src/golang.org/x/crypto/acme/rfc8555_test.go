@@ -7,17 +7,22 @@ package acme
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -59,7 +64,7 @@ func TestRFC_Discover(t *testing.T) {
 		}`, nonce, reg, order, authz, revoke, keychange, metaTerms, metaWebsite, metaCAA)
 	}))
 	defer ts.Close()
-	c := Client{DirectoryURL: ts.URL}
+	c := &Client{DirectoryURL: ts.URL}
 	dir, err := c.Discover(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -143,7 +148,7 @@ func TestRFC_postKID(t *testing.T) {
 			w.Header().Set("Location", "/account-1")
 			w.Write([]byte(`{"status":"valid"}`))
 		case "/post":
-			b, _ := ioutil.ReadAll(r.Body) // check err later in decodeJWSxxx
+			b, _ := io.ReadAll(r.Body) // check err later in decodeJWSxxx
 			head, err := decodeJWSHead(bytes.NewReader(b))
 			if err != nil {
 				t.Errorf("decodeJWSHead: %v", err)
@@ -172,8 +177,7 @@ func TestRFC_postKID(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	cl := &Client{
 		Key:          testKey,
 		DirectoryURL: ts.URL,
@@ -189,13 +193,13 @@ func TestRFC_postKID(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer res.Body.Close()
-	b, _ := ioutil.ReadAll(res.Body) // don't care about err - just checking b
+	b, _ := io.ReadAll(res.Body) // don't care about err - just checking b
 	if string(b) != "pong" {
 		t.Errorf("res.Body = %q; want pong", b)
 	}
 }
 
-// acmeServer simulates a subset of RFC8555 compliant CA.
+// acmeServer simulates a subset of RFC 8555 compliant CA.
 //
 // TODO: We also have x/crypto/acme/autocert/acmetest and startACMEServerStub in autocert_test.go.
 // It feels like this acmeServer is a sweet spot between usefulness and added complexity.
@@ -229,6 +233,7 @@ func (s *acmeServer) start() {
 				"newOrder": %q,
 				"newAuthz": %q,
 				"revokeCert": %q,
+				"keyChange": %q,
 				"meta": {"termsOfService": %q}
 				}`,
 				s.url("/acme/new-nonce"),
@@ -236,6 +241,7 @@ func (s *acmeServer) start() {
 				s.url("/acme/new-order"),
 				s.url("/acme/new-authz"),
 				s.url("/acme/revoke-cert"),
+				s.url("/acme/key-change"),
 				s.url("/terms"),
 			)
 			return
@@ -290,7 +296,7 @@ func TestRFC_Register(t *testing.T) {
 			"orders": %q
 		}`, email, s.url("/accounts/1/orders"))
 
-		b, _ := ioutil.ReadAll(r.Body) // check err later in decodeJWSxxx
+		b, _ := io.ReadAll(r.Body) // check err later in decodeJWSxxx
 		head, err := decodeJWSHead(bytes.NewReader(b))
 		if err != nil {
 			t.Errorf("decodeJWSHead: %v", err)
@@ -309,8 +315,7 @@ func TestRFC_Register(t *testing.T) {
 	s.start()
 	defer s.close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	cl := &Client{
 		Key:          testKeyEC,
 		DirectoryURL: s.url("/"),
@@ -341,7 +346,144 @@ func TestRFC_Register(t *testing.T) {
 	if !didPrompt {
 		t.Error("tos prompt wasn't called")
 	}
-	if v := cl.accountKID(ctx); v != keyID(okAccount.URI) {
+	if v := cl.accountKID(ctx); v != KeyID(okAccount.URI) {
+		t.Errorf("account kid = %q; want %q", v, okAccount.URI)
+	}
+}
+
+func TestRFC_RegisterExternalAccountBinding(t *testing.T) {
+	eab := &ExternalAccountBinding{
+		KID: "kid-1",
+		Key: []byte("secret"),
+	}
+
+	type protected struct {
+		Algorithm string `json:"alg"`
+		KID       string `json:"kid"`
+		URL       string `json:"url"`
+	}
+	const email = "mailto:user@example.org"
+
+	s := newACMEServer()
+	s.handle("/acme/new-account", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", s.url("/accounts/1"))
+		if r.Method != "POST" {
+			t.Errorf("r.Method = %q; want POST", r.Method)
+		}
+
+		var j struct {
+			Protected              string
+			Contact                []string
+			TermsOfServiceAgreed   bool
+			ExternalaccountBinding struct {
+				Protected string
+				Payload   string
+				Signature string
+			}
+		}
+		decodeJWSRequest(t, &j, r.Body)
+		protData, err := base64.RawURLEncoding.DecodeString(j.ExternalaccountBinding.Protected)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var prot protected
+		err = json.Unmarshal(protData, &prot)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if !reflect.DeepEqual(j.Contact, []string{email}) {
+			t.Errorf("j.Contact = %v; want %v", j.Contact, []string{email})
+		}
+		if !j.TermsOfServiceAgreed {
+			t.Error("j.TermsOfServiceAgreed = false; want true")
+		}
+
+		// Ensure same KID.
+		if prot.KID != eab.KID {
+			t.Errorf("j.ExternalAccountBinding.KID = %s; want %s", prot.KID, eab.KID)
+		}
+		// Ensure expected Algorithm.
+		if prot.Algorithm != "HS256" {
+			t.Errorf("j.ExternalAccountBinding.Alg = %s; want %s",
+				prot.Algorithm, "HS256")
+		}
+
+		// Ensure same URL as outer JWS.
+		url := fmt.Sprintf("http://%s/acme/new-account", r.Host)
+		if prot.URL != url {
+			t.Errorf("j.ExternalAccountBinding.URL = %s; want %s",
+				prot.URL, url)
+		}
+
+		// Ensure payload is base64URL encoded string of JWK in outer JWS
+		jwk, err := jwkEncode(testKeyEC.Public())
+		if err != nil {
+			t.Fatal(err)
+		}
+		decodedPayload, err := base64.RawURLEncoding.DecodeString(j.ExternalaccountBinding.Payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if jwk != string(decodedPayload) {
+			t.Errorf("j.ExternalAccountBinding.Payload = %s; want %s", decodedPayload, jwk)
+		}
+
+		// Check signature on inner external account binding JWS
+		hmac := hmac.New(sha256.New, []byte("secret"))
+		_, err = hmac.Write([]byte(j.ExternalaccountBinding.Protected + "." + j.ExternalaccountBinding.Payload))
+		if err != nil {
+			t.Fatal(err)
+		}
+		mac := hmac.Sum(nil)
+		encodedMAC := base64.RawURLEncoding.EncodeToString(mac)
+
+		if !bytes.Equal([]byte(encodedMAC), []byte(j.ExternalaccountBinding.Signature)) {
+			t.Errorf("j.ExternalAccountBinding.Signature = %v; want %v",
+				[]byte(j.ExternalaccountBinding.Signature), encodedMAC)
+		}
+
+		w.Header().Set("Location", s.url("/accounts/1"))
+		w.WriteHeader(http.StatusCreated)
+		b, _ := json.Marshal([]string{email})
+		fmt.Fprintf(w, `{"status":"valid","orders":"%s","contact":%s}`, s.url("/accounts/1/orders"), b)
+	})
+	s.start()
+	defer s.close()
+
+	ctx := context.Background()
+	cl := &Client{
+		Key:          testKeyEC,
+		DirectoryURL: s.url("/"),
+	}
+
+	var didPrompt bool
+	a := &Account{Contact: []string{email}, ExternalAccountBinding: eab}
+	acct, err := cl.Register(ctx, a, func(tos string) bool {
+		didPrompt = true
+		terms := s.url("/terms")
+		if tos != terms {
+			t.Errorf("tos = %q; want %q", tos, terms)
+		}
+		return true
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	okAccount := &Account{
+		URI:       s.url("/accounts/1"),
+		Status:    StatusValid,
+		Contact:   []string{email},
+		OrdersURL: s.url("/accounts/1/orders"),
+	}
+	if !reflect.DeepEqual(acct, okAccount) {
+		t.Errorf("acct = %+v; want %+v", acct, okAccount)
+	}
+	if !didPrompt {
+		t.Error("tos prompt wasn't called")
+	}
+	if v := cl.accountKID(ctx); v != KeyID(okAccount.URI) {
 		t.Errorf("account kid = %q; want %q", v, okAccount.URI)
 	}
 }
@@ -361,7 +503,7 @@ func TestRFC_RegisterExisting(t *testing.T) {
 	if err != ErrAccountAlreadyExists {
 		t.Errorf("err = %v; want %v", err, ErrAccountAlreadyExists)
 	}
-	kid := keyID(s.url("/accounts/1"))
+	kid := KeyID(s.url("/accounts/1"))
 	if v := cl.accountKID(context.Background()); v != kid {
 		t.Errorf("account kid = %q; want %q", v, kid)
 	}
@@ -383,7 +525,7 @@ func TestRFC_UpdateReg(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status": "valid"}`))
 
-		b, _ := ioutil.ReadAll(r.Body) // check err later in decodeJWSxxx
+		b, _ := io.ReadAll(r.Body) // check err later in decodeJWSxxx
 		head, err := decodeJWSHead(bytes.NewReader(b))
 		if err != nil {
 			t.Errorf("decodeJWSHead: %v", err)
@@ -477,6 +619,128 @@ func TestRFC_GetRegOtherError(t *testing.T) {
 	cl := &Client{Key: testKeyEC, DirectoryURL: s.url("/")}
 	if _, err := cl.GetReg(context.Background(), ""); err == nil || err == ErrNoAccount {
 		t.Errorf("GetReg: %v; want any other non-nil err", err)
+	}
+}
+
+func TestRFC_AccountKeyRollover(t *testing.T) {
+	s := newACMEServer()
+	s.handle("/acme/new-account", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", s.url("/accounts/1"))
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status": "valid"}`))
+	})
+	s.handle("/acme/key-change", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	s.start()
+	defer s.close()
+
+	cl := &Client{Key: testKeyEC, DirectoryURL: s.url("/")}
+	if err := cl.AccountKeyRollover(context.Background(), testKeyEC384); err != nil {
+		t.Errorf("AccountKeyRollover: %v, wanted no error", err)
+	} else if cl.Key != testKeyEC384 {
+		t.Error("AccountKeyRollover did not rotate the client key")
+	}
+}
+
+func TestRFC_DeactivateReg(t *testing.T) {
+	const email = "mailto:user@example.org"
+	curStatus := StatusValid
+
+	type account struct {
+		Status    string   `json:"status"`
+		Contact   []string `json:"contact"`
+		AcceptTOS bool     `json:"termsOfServiceAgreed"`
+		Orders    string   `json:"orders"`
+	}
+
+	s := newACMEServer()
+	s.handle("/acme/new-account", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", s.url("/accounts/1"))
+		w.WriteHeader(http.StatusOK) // 200 means existing account
+		json.NewEncoder(w).Encode(account{
+			Status:    curStatus,
+			Contact:   []string{email},
+			AcceptTOS: true,
+			Orders:    s.url("/accounts/1/orders"),
+		})
+
+		b, _ := io.ReadAll(r.Body) // check err later in decodeJWSxxx
+		head, err := decodeJWSHead(bytes.NewReader(b))
+		if err != nil {
+			t.Errorf("decodeJWSHead: %v", err)
+			return
+		}
+		if len(head.JWK) == 0 {
+			t.Error("head.JWK is empty")
+		}
+
+		var req struct {
+			Status       string   `json:"status"`
+			Contact      []string `json:"contact"`
+			AcceptTOS    bool     `json:"termsOfServiceAgreed"`
+			OnlyExisting bool     `json:"onlyReturnExisting"`
+		}
+		decodeJWSRequest(t, &req, bytes.NewReader(b))
+		if !req.OnlyExisting {
+			t.Errorf("req.OnlyReturnExisting = %t; want = %t", req.OnlyExisting, true)
+		}
+	})
+	s.handle("/accounts/1", func(w http.ResponseWriter, r *http.Request) {
+		if curStatus == StatusValid {
+			curStatus = StatusDeactivated
+			w.WriteHeader(http.StatusOK)
+		} else {
+			s.error(w, &wireError{
+				Status: http.StatusUnauthorized,
+				Type:   "urn:ietf:params:acme:error:unauthorized",
+			})
+		}
+		var req account
+		b, _ := io.ReadAll(r.Body) // check err later in decodeJWSxxx
+		head, err := decodeJWSHead(bytes.NewReader(b))
+		if err != nil {
+			t.Errorf("decodeJWSHead: %v", err)
+			return
+		}
+		if len(head.JWK) != 0 {
+			t.Error("head.JWK is not empty")
+		}
+		if !strings.HasSuffix(head.KID, "/accounts/1") {
+			t.Errorf("head.KID = %q; want suffix /accounts/1", head.KID)
+		}
+
+		decodeJWSRequest(t, &req, bytes.NewReader(b))
+		if req.Status != StatusDeactivated {
+			t.Errorf("req.Status = %q; want = %q", req.Status, StatusDeactivated)
+		}
+	})
+	s.start()
+	defer s.close()
+
+	cl := &Client{Key: testKeyEC, DirectoryURL: s.url("/")}
+	if err := cl.DeactivateReg(context.Background()); err != nil {
+		t.Errorf("DeactivateReg: %v, wanted no error", err)
+	}
+	if err := cl.DeactivateReg(context.Background()); err == nil {
+		t.Errorf("DeactivateReg: %v, wanted error for unauthorized", err)
+	}
+}
+
+func TestRF_DeactivateRegNoAccount(t *testing.T) {
+	s := newACMEServer()
+	s.handle("/acme/new-account", func(w http.ResponseWriter, r *http.Request) {
+		s.error(w, &wireError{
+			Status: http.StatusBadRequest,
+			Type:   "urn:ietf:params:acme:error:accountDoesNotExist",
+		})
+	})
+	s.start()
+	defer s.close()
+
+	cl := &Client{Key: testKeyEC, DirectoryURL: s.url("/")}
+	if err := cl.DeactivateReg(context.Background()); !errors.Is(err, ErrNoAccount) {
+		t.Errorf("DeactivateReg: %v, wanted ErrNoAccount", err)
 	}
 }
 
@@ -600,24 +864,13 @@ func testWaitOrderStatus(t *testing.T, okStatus string) {
 	s.start()
 	defer s.close()
 
-	var order *Order
-	var err error
-	done := make(chan struct{})
-	go func() {
-		cl := &Client{Key: testKeyEC, DirectoryURL: s.url("/")}
-		order, err = cl.WaitOrder(context.Background(), s.url("/orders/1"))
-		close(done)
-	}()
-	select {
-	case <-time.After(3 * time.Second):
-		t.Fatal("WaitOrder took too long to return")
-	case <-done:
-		if err != nil {
-			t.Fatalf("WaitOrder: %v", err)
-		}
-		if order.Status != okStatus {
-			t.Errorf("order.Status = %q; want %q", order.Status, okStatus)
-		}
+	cl := &Client{Key: testKeyEC, DirectoryURL: s.url("/")}
+	order, err := cl.WaitOrder(context.Background(), s.url("/orders/1"))
+	if err != nil {
+		t.Fatalf("WaitOrder: %v", err)
+	}
+	if order.Status != okStatus {
+		t.Errorf("order.Status = %q; want %q", order.Status, okStatus)
 	}
 }
 
@@ -642,30 +895,20 @@ func TestRFC_WaitOrderError(t *testing.T) {
 	s.start()
 	defer s.close()
 
-	var err error
-	done := make(chan struct{})
-	go func() {
-		cl := &Client{Key: testKeyEC, DirectoryURL: s.url("/")}
-		_, err = cl.WaitOrder(context.Background(), s.url("/orders/1"))
-		close(done)
-	}()
-	select {
-	case <-time.After(3 * time.Second):
-		t.Fatal("WaitOrder took too long to return")
-	case <-done:
-		if err == nil {
-			t.Fatal("WaitOrder returned nil error")
-		}
-		e, ok := err.(*OrderError)
-		if !ok {
-			t.Fatalf("err = %v (%T); want OrderError", err, err)
-		}
-		if e.OrderURL != s.url("/orders/1") {
-			t.Errorf("e.OrderURL = %q; want %q", e.OrderURL, s.url("/orders/1"))
-		}
-		if e.Status != StatusInvalid {
-			t.Errorf("e.Status = %q; want %q", e.Status, StatusInvalid)
-		}
+	cl := &Client{Key: testKeyEC, DirectoryURL: s.url("/")}
+	_, err := cl.WaitOrder(context.Background(), s.url("/orders/1"))
+	if err == nil {
+		t.Fatal("WaitOrder returned nil error")
+	}
+	e, ok := err.(*OrderError)
+	if !ok {
+		t.Fatalf("err = %v (%T); want OrderError", err, err)
+	}
+	if e.OrderURL != s.url("/orders/1") {
+		t.Errorf("e.OrderURL = %q; want %q", e.OrderURL, s.url("/orders/1"))
+	}
+	if e.Status != StatusInvalid {
+		t.Errorf("e.Status = %q; want %q", e.Status, StatusInvalid)
 	}
 }
 
@@ -705,8 +948,7 @@ func TestRFC_CreateOrderCert(t *testing.T) {
 	})
 	s.start()
 	defer s.close()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	cl := &Client{Key: testKeyEC, DirectoryURL: s.url("/")}
 	cert, curl, err := cl.CreateOrderCert(ctx, s.url("/pleaseissue"), csr, true)
@@ -739,5 +981,37 @@ func TestRFC_AlreadyRevokedCert(t *testing.T) {
 	err := cl.RevokeCert(context.Background(), testKeyEC, []byte{0}, CRLReasonUnspecified)
 	if err != nil {
 		t.Fatalf("RevokeCert: %v", err)
+	}
+}
+
+func TestRFC_ListCertAlternates(t *testing.T) {
+	s := newACMEServer()
+	s.handle("/crt", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/pem-certificate-chain")
+		w.Header().Add("Link", `<https://example.com/crt/2>;rel="alternate"`)
+		w.Header().Add("Link", `<https://example.com/crt/3>; rel="alternate"`)
+		w.Header().Add("Link", `<https://example.com/acme>; rel="index"`)
+	})
+	s.handle("/crt2", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/pem-certificate-chain")
+	})
+	s.start()
+	defer s.close()
+
+	cl := &Client{Key: testKeyEC, DirectoryURL: s.url("/")}
+	crts, err := cl.ListCertAlternates(context.Background(), s.url("/crt"))
+	if err != nil {
+		t.Fatalf("ListCertAlternates: %v", err)
+	}
+	want := []string{"https://example.com/crt/2", "https://example.com/crt/3"}
+	if !reflect.DeepEqual(crts, want) {
+		t.Errorf("ListCertAlternates(/crt): %v; want %v", crts, want)
+	}
+	crts, err = cl.ListCertAlternates(context.Background(), s.url("/crt2"))
+	if err != nil {
+		t.Fatalf("ListCertAlternates: %v", err)
+	}
+	if crts != nil {
+		t.Errorf("ListCertAlternates(/crt2): %v; want nil", crts)
 	}
 }

@@ -3,12 +3,12 @@
 // license that can be found in the LICENSE file.
 
 //go:build freebsd || linux || netbsd || openbsd
-// +build freebsd linux netbsd openbsd
 
 package unix_test
 
 import (
 	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
 
@@ -16,11 +16,10 @@ import (
 )
 
 func TestDup3(t *testing.T) {
-	tempFile, err := os.CreateTemp("", "TestDup")
+	tempFile, err := os.Create(filepath.Join(t.TempDir(), "TestDup"))
 	if err != nil {
-		t.Fatalf("CreateTemp failed: %v", err)
+		t.Fatal(err)
 	}
-	defer os.Remove(tempFile.Name())
 	defer tempFile.Close()
 	oldFd := int(tempFile.Fd())
 

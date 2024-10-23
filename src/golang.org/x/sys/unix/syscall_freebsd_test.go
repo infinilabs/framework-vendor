@@ -3,18 +3,15 @@
 // license that can be found in the LICENSE file.
 
 //go:build freebsd
-// +build freebsd
 
 package unix_test
 
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -34,10 +31,8 @@ func TestSysctlUint64(t *testing.T) {
 // corresponding to the given key.
 
 type testProc struct {
-	fn      func()                    // should always exit instead of returning
-	arg     func(t *testing.T) string // generate argument for test
-	cleanup func(arg string) error    // for instance, delete coredumps from testing pledge
-	success bool                      // whether zero-exit means success or failure
+	fn      func() // should always exit instead of returning
+	success bool   // whether zero-exit means success or failure
 }
 
 var (
@@ -58,7 +53,7 @@ func init() {
 }
 
 func testCmd(procName string, procArg string) (*exec.Cmd, error) {
-	exe, err := filepath.Abs(os.Args[0])
+	exe, err := os.Executable()
 	if err != nil {
 		return nil, err
 	}
@@ -71,16 +66,7 @@ func testCmd(procName string, procArg string) (*exec.Cmd, error) {
 // a testProc with a key.
 func ExitsCorrectly(t *testing.T, procName string) {
 	s := testProcs[procName]
-	arg := "-"
-	if s.arg != nil {
-		arg = s.arg(t)
-	}
-	c, err := testCmd(procName, arg)
-	defer func(arg string) {
-		if err := s.cleanup(arg); err != nil {
-			t.Fatalf("Failed to run cleanup for %s %s %#v", procName, err, err)
-		}
-	}(arg)
+	c, err := testCmd(procName, t.TempDir())
 	if err != nil {
 		t.Fatalf("Failed to construct command for %s", procName)
 	}
@@ -114,7 +100,7 @@ const testfile = "gocapmodetest"
 const testfile2 = testfile + "2"
 
 func CapEnterTest() {
-	_, err := os.OpenFile(path.Join(procArg, testfile), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
+	_, err := os.OpenFile(filepath.Join(procArg, testfile), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		panic(fmt.Sprintf("OpenFile: %s", err))
 	}
@@ -124,7 +110,7 @@ func CapEnterTest() {
 		panic(fmt.Sprintf("CapEnter: %s", err))
 	}
 
-	_, err = os.OpenFile(path.Join(procArg, testfile2), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
+	_, err = os.OpenFile(filepath.Join(procArg, testfile2), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
 	if err == nil {
 		panic("OpenFile works!")
 	}
@@ -134,27 +120,9 @@ func CapEnterTest() {
 	os.Exit(0)
 }
 
-func makeTempDir(t *testing.T) string {
-	d, err := ioutil.TempDir("", "go_openat_test")
-	if err != nil {
-		t.Fatalf("TempDir failed: %s", err)
-	}
-	return d
-}
-
-func removeTempDir(arg string) error {
-	err := os.RemoveAll(arg)
-	if err != nil && err.(*os.PathError).Err == unix.ENOENT {
-		return nil
-	}
-	return err
-}
-
 func init() {
 	testProcs["cap_enter"] = testProc{
 		CapEnterTest,
-		makeTempDir,
-		removeTempDir,
 		true,
 	}
 }
@@ -252,8 +220,6 @@ func OpenatTest() {
 func init() {
 	testProcs["openat"] = testProc{
 		OpenatTest,
-		makeTempDir,
-		removeTempDir,
 		true,
 	}
 }

@@ -21,14 +21,13 @@ go get -u github.com/vendor/repo
 
 The vendor files will be located in the `~/go/src` directory.
 
-Clean up the `.git` repositories from all submodules, run this command (exclude `infini.sh` folder):
-```
-find . -type d -name ".git" -exec rm -rf {} +
-```
-
 Move the necessary vendor files to the `vendor` directory into repo.
 
-After adding the files to vendor, commit them to your repository.
+Clean up the `.git` repositories from all submodules, run this command (exclude `.git` in the root folder):
+```
+find . -path './.git' -prune -o -type d -name ".git" -exec rm -rf {} +
+```
+
+After cleanup the new vendor files, commit them to your repository.
 
 Once the vendor files are copied, you can clean up the files located in `~/go/src`, except for the `infini.sh` folder.
-

@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build solaris
-// +build solaris
 
 package unix_test
 
@@ -11,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -83,12 +83,12 @@ func TestSysconf(t *testing.T) {
 // Event Ports
 
 func TestBasicEventPort(t *testing.T) {
-	tmpfile, err := os.CreateTemp("", "eventport")
+	tmpfile, err := os.Create(filepath.Join(t.TempDir(), "eventport"))
 	if err != nil {
-		t.Fatalf("unable to create a tempfile: %v", err)
+		t.Fatal(err)
 	}
+	defer tmpfile.Close()
 	path := tmpfile.Name()
-	defer os.Remove(path)
 
 	stat, err := os.Stat(path)
 	if err != nil {
@@ -207,7 +207,7 @@ func TestEventPortErrors(t *testing.T) {
 	defer port.Close()
 	err = port.AssociatePath(path, stat, unix.FILE_MODIFIED, nil)
 	if err == nil {
-		t.Errorf("unexpected success associating nonexistant file")
+		t.Errorf("unexpected success associating nonexistent file")
 	}
 	err = port.DissociatePath(path)
 	if err == nil {

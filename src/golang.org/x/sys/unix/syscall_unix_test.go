@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build aix || darwin || dragonfly || freebsd || linux || netbsd || openbsd || solaris
-// +build aix darwin dragonfly freebsd linux netbsd openbsd solaris
 
 package unix_test
 
@@ -11,7 +10,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -126,11 +125,10 @@ func TestSignalNum(t *testing.T) {
 
 func TestFcntlInt(t *testing.T) {
 	t.Parallel()
-	file, err := ioutil.TempFile("", "TestFcntlInt")
+	file, err := os.Create(filepath.Join(t.TempDir(), t.Name()))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(file.Name())
 	defer file.Close()
 	f := file.Fd()
 	flags, err := unix.FcntlInt(f, unix.F_GETFD, 0)
@@ -145,12 +143,11 @@ func TestFcntlInt(t *testing.T) {
 // TestFcntlFlock tests whether the file locking structure matches
 // the calling convention of each kernel.
 func TestFcntlFlock(t *testing.T) {
-	name := filepath.Join(os.TempDir(), "TestFcntlFlock")
+	name := filepath.Join(t.TempDir(), "TestFcntlFlock")
 	fd, err := unix.Open(name, unix.O_CREAT|unix.O_RDWR|unix.O_CLOEXEC, 0)
 	if err != nil {
 		t.Fatalf("Open failed: %v", err)
 	}
-	defer unix.Unlink(name)
 	defer unix.Close(fd)
 	flock := unix.Flock_t{
 		Type:  unix.F_RDLCK,
@@ -199,12 +196,6 @@ func TestPassFD(t *testing.T) {
 		}
 	}
 
-	tempDir, err := ioutil.TempDir("", "TestPassFD")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDir)
-
 	fds, err := unix.Socketpair(unix.AF_LOCAL, unix.SOCK_STREAM, 0)
 	if err != nil {
 		t.Fatalf("Socketpair: %v", err)
@@ -214,7 +205,11 @@ func TestPassFD(t *testing.T) {
 	defer writeFile.Close()
 	defer readFile.Close()
 
-	cmd := exec.Command(os.Args[0], "-test.run=^TestPassFD$", "--", tempDir)
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(exe, "-test.run=^TestPassFD$", "--", t.TempDir())
 	cmd.Env = []string{"GO_WANT_HELPER_PROCESS=1"}
 	if lp := os.Getenv("LD_LIBRARY_PATH"); lp != "" {
 		cmd.Env = append(cmd.Env, "LD_LIBRARY_PATH="+lp)
@@ -268,7 +263,7 @@ func TestPassFD(t *testing.T) {
 	f := os.NewFile(uintptr(gotFds[0]), "fd-from-child")
 	defer f.Close()
 
-	got, err := ioutil.ReadAll(f)
+	got, err := io.ReadAll(f)
 	want := "Hello from child process!\n"
 	if string(got) != want {
 		t.Errorf("child process ReadAll: %q, %v; want %q", got, err, want)
@@ -300,9 +295,9 @@ func passFDChild() {
 	// We make it in tempDir, which our parent will clean up.
 	flag.Parse()
 	tempDir := flag.Arg(0)
-	f, err := ioutil.TempFile(tempDir, "")
+	f, err := os.Create(filepath.Join(tempDir, "file"))
 	if err != nil {
-		fmt.Printf("TempFile: %v", err)
+		fmt.Println(err)
 		return
 	}
 
@@ -459,11 +454,10 @@ func TestSetsockoptString(t *testing.T) {
 }
 
 func TestDup(t *testing.T) {
-	file, err := ioutil.TempFile("", "TestDup")
+	file, err := os.Create(filepath.Join(t.TempDir(), t.Name()))
 	if err != nil {
-		t.Fatalf("Tempfile failed: %v", err)
+		t.Fatal(err)
 	}
-	defer os.Remove(file.Name())
 	defer file.Close()
 	f := int(file.Fd())
 
@@ -511,9 +505,8 @@ func TestPoll(t *testing.T) {
 		t.Skip("mkfifo syscall is not available on android and iOS, skipping test")
 	}
 
-	defer chtmpdir(t)()
-	f, cleanup := mktmpfifo(t)
-	defer cleanup()
+	chtmpdir(t)
+	f := mktmpfifo(t)
 
 	const timeout = 100
 
@@ -659,15 +652,7 @@ func TestGetwd(t *testing.T) {
 	case "android":
 		dirs = []string{"/", "/system/bin"}
 	case "ios":
-		d1, err := ioutil.TempDir("", "d1")
-		if err != nil {
-			t.Fatalf("TempDir: %v", err)
-		}
-		d2, err := ioutil.TempDir("", "d2")
-		if err != nil {
-			t.Fatalf("TempDir: %v", err)
-		}
-		dirs = []string{d1, d2}
+		dirs = []string{t.TempDir(), t.TempDir()}
 	}
 	oldwd := os.Getenv("PWD")
 	for _, d := range dirs {
@@ -727,7 +712,7 @@ func compareStat_t(t *testing.T, otherStat string, st1, st2 *unix.Stat_t) {
 }
 
 func TestFstatat(t *testing.T) {
-	defer chtmpdir(t)()
+	chtmpdir(t)
 
 	touch(t, "file1")
 
@@ -764,7 +749,7 @@ func TestFstatat(t *testing.T) {
 }
 
 func TestFchmodat(t *testing.T) {
-	defer chtmpdir(t)()
+	chtmpdir(t)
 
 	touch(t, "file1")
 	err := os.Symlink("file1", "symlink1")
@@ -874,7 +859,7 @@ func TestPipe(t *testing.T) {
 }
 
 func TestRenameat(t *testing.T) {
-	defer chtmpdir(t)()
+	chtmpdir(t)
 
 	from, to := "renamefrom", "renameto"
 
@@ -897,7 +882,7 @@ func TestRenameat(t *testing.T) {
 }
 
 func TestUtimesNanoAt(t *testing.T) {
-	defer chtmpdir(t)()
+	chtmpdir(t)
 
 	symlink := "symlink1"
 	os.Remove(symlink)
@@ -1128,8 +1113,9 @@ func TestRecvmsgControl(t *testing.T) {
 	defer unix.Close(cfds[0])
 }
 
-// mktmpfifo creates a temporary FIFO and provides a cleanup function.
-func mktmpfifo(t *testing.T) (*os.File, func()) {
+// mktmpfifo creates a temporary FIFO and sets up a cleanup function.
+func mktmpfifo(t *testing.T) *os.File {
+	t.Helper()
 	err := unix.Mkfifo("fifo", 0666)
 	if err != nil {
 		t.Fatalf("mktmpfifo: failed to create FIFO: %v", err)
@@ -1138,18 +1124,20 @@ func mktmpfifo(t *testing.T) (*os.File, func()) {
 	f, err := os.OpenFile("fifo", os.O_RDWR, 0666)
 	if err != nil {
 		os.Remove("fifo")
-		t.Fatalf("mktmpfifo: failed to open FIFO: %v", err)
+		t.Fatal(err)
 	}
-
-	return f, func() {
+	t.Cleanup(func() {
 		f.Close()
 		os.Remove("fifo")
-	}
+	})
+
+	return f
 }
 
 // utilities taken from os/os_test.go
 
 func touch(t *testing.T, name string) {
+	t.Helper()
 	f, err := os.Create(name)
 	if err != nil {
 		t.Fatal(err)
@@ -1160,23 +1148,19 @@ func touch(t *testing.T, name string) {
 }
 
 // chtmpdir changes the working directory to a new temporary directory and
-// provides a cleanup function. Used when PWD is read-only.
-func chtmpdir(t *testing.T) func() {
+// sets up a cleanup function. Used when PWD is read-only.
+func chtmpdir(t *testing.T) {
+	t.Helper()
 	oldwd, err := os.Getwd()
 	if err != nil {
-		t.Fatalf("chtmpdir: %v", err)
+		t.Fatal(err)
 	}
-	d, err := ioutil.TempDir("", "test")
-	if err != nil {
-		t.Fatalf("chtmpdir: %v", err)
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatal(err)
 	}
-	if err := os.Chdir(d); err != nil {
-		t.Fatalf("chtmpdir: %v", err)
-	}
-	return func() {
+	t.Cleanup(func() {
 		if err := os.Chdir(oldwd); err != nil {
-			t.Fatalf("chtmpdir: %v", err)
+			t.Fatal(err)
 		}
-		os.RemoveAll(d)
-	}
+	})
 }

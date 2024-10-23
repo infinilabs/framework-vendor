@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"crypto/dsa"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
@@ -15,13 +16,13 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"reflect"
 	"strings"
 	"testing"
 
-	"golang.org/x/crypto/ed25519"
 	"golang.org/x/crypto/ssh/testdata"
 )
 
@@ -111,9 +112,9 @@ func TestKeySignVerify(t *testing.T) {
 }
 
 func TestKeySignWithAlgorithmVerify(t *testing.T) {
-	for _, priv := range testSigners {
-		if algorithmSigner, ok := priv.(AlgorithmSigner); !ok {
-			t.Errorf("Signers constructed by ssh package should always implement the AlgorithmSigner interface: %T", priv)
+	for k, priv := range testSigners {
+		if algorithmSigner, ok := priv.(MultiAlgorithmSigner); !ok {
+			t.Errorf("Signers %q constructed by ssh package should always implement the MultiAlgorithmSigner interface: %T", k, priv)
 		} else {
 			pub := priv.PublicKey()
 			data := []byte("sign me")
@@ -145,10 +146,48 @@ func TestKeySignWithAlgorithmVerify(t *testing.T) {
 
 			// RSA keys are the only ones which currently support more than one signing algorithm
 			if pub.Type() == KeyAlgoRSA {
-				for _, algorithm := range []string{SigAlgoRSA, SigAlgoRSASHA2256, SigAlgoRSASHA2512} {
+				for _, algorithm := range []string{KeyAlgoRSA, KeyAlgoRSASHA256, KeyAlgoRSASHA512} {
 					signWithAlgTestCase(algorithm, algorithm)
 				}
 			}
+		}
+	}
+}
+
+func TestKeySignWithShortSignature(t *testing.T) {
+	signer := testSigners["rsa"].(AlgorithmSigner)
+	pub := signer.PublicKey()
+	// Note: data obtained by empirically trying until a result
+	// starting with 0 appeared
+	tests := []struct {
+		algorithm string
+		data      []byte
+	}{
+		{
+			algorithm: KeyAlgoRSA,
+			data:      []byte("sign me92"),
+		},
+		{
+			algorithm: KeyAlgoRSASHA256,
+			data:      []byte("sign me294"),
+		},
+		{
+			algorithm: KeyAlgoRSASHA512,
+			data:      []byte("sign me60"),
+		},
+	}
+
+	for _, tt := range tests {
+		sig, err := signer.SignWithAlgorithm(rand.Reader, tt.data, tt.algorithm)
+		if err != nil {
+			t.Fatalf("Sign(%T): %v", signer, err)
+		}
+		if sig.Blob[0] != 0 {
+			t.Errorf("%s: Expected signature with a leading 0", tt.algorithm)
+		}
+		sig.Blob = sig.Blob[1:]
+		if err := pub.Verify(tt.data, sig); err != nil {
+			t.Errorf("publicKey.Verify(%s): %v", tt.algorithm, err)
 		}
 	}
 }
@@ -221,6 +260,16 @@ func TestParseEncryptedPrivateKeysWithPassphrase(t *testing.T) {
 	}
 }
 
+func TestParseEncryptedPrivateKeysWithIncorrectPassphrase(t *testing.T) {
+	pem := testdata.PEMEncryptedKeys[0].PEMBytes
+	for i := 0; i < 4096; i++ {
+		_, err := ParseRawPrivateKeyWithPassphrase(pem, []byte(fmt.Sprintf("%d", i)))
+		if !errors.Is(err, x509.IncorrectPasswordError) {
+			t.Fatalf("expected error: %v, got: %v", x509.IncorrectPasswordError, err)
+		}
+	}
+}
+
 func TestParseDSA(t *testing.T) {
 	// We actually exercise the ParsePrivateKey codepath here, as opposed to
 	// using the ParseRawPrivateKey+NewSignerFromKey path that testdata_test.go
@@ -278,6 +327,74 @@ func TestMarshalParsePublicKey(t *testing.T) {
 	}
 	if !reflect.DeepEqual(actPub, pub) {
 		t.Errorf("got %v, expected %v", actPub, pub)
+	}
+}
+
+func TestMarshalPrivateKey(t *testing.T) {
+	tests := []struct {
+		name string
+	}{
+		{"rsa-openssh-format"},
+		{"ed25519"},
+		{"p256-openssh-format"},
+		{"p384-openssh-format"},
+		{"p521-openssh-format"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expected, ok := testPrivateKeys[tt.name]
+			if !ok {
+				t.Fatalf("cannot find key %s", tt.name)
+			}
+
+			block, err := MarshalPrivateKey(expected, "test@golang.org")
+			if err != nil {
+				t.Fatalf("cannot marshal %s: %v", tt.name, err)
+			}
+
+			key, err := ParseRawPrivateKey(pem.EncodeToMemory(block))
+			if err != nil {
+				t.Fatalf("cannot parse %s: %v", tt.name, err)
+			}
+
+			if !reflect.DeepEqual(expected, key) {
+				t.Errorf("unexpected marshaled key %s", tt.name)
+			}
+		})
+	}
+}
+
+func TestMarshalPrivateKeyWithPassphrase(t *testing.T) {
+	tests := []struct {
+		name string
+	}{
+		{"rsa-openssh-format"},
+		{"ed25519"},
+		{"p256-openssh-format"},
+		{"p384-openssh-format"},
+		{"p521-openssh-format"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expected, ok := testPrivateKeys[tt.name]
+			if !ok {
+				t.Fatalf("cannot find key %s", tt.name)
+			}
+
+			block, err := MarshalPrivateKeyWithPassphrase(expected, "test@golang.org", []byte("test-passphrase"))
+			if err != nil {
+				t.Fatalf("cannot marshal %s: %v", tt.name, err)
+			}
+
+			key, err := ParseRawPrivateKeyWithPassphrase(pem.EncodeToMemory(block), []byte("test-passphrase"))
+			if err != nil {
+				t.Fatalf("cannot parse %s: %v", tt.name, err)
+			}
+
+			if !reflect.DeepEqual(expected, key) {
+				t.Errorf("unexpected marshaled key %s", tt.name)
+			}
+		})
 	}
 }
 
@@ -531,7 +648,7 @@ func TestKnownHostsParsing(t *testing.T) {
 func TestFingerprintLegacyMD5(t *testing.T) {
 	pub, _ := getTestKey()
 	fingerprint := FingerprintLegacyMD5(pub)
-	want := "fb:61:6d:1a:e3:f0:95:45:3c:a0:79:be:4a:93:63:66" // ssh-keygen -lf -E md5 rsa
+	want := "b7:ef:d3:d5:89:29:52:96:9f:df:47:41:4d:15:37:f4" // ssh-keygen -lf -E md5 rsa
 	if fingerprint != want {
 		t.Errorf("got fingerprint %q want %q", fingerprint, want)
 	}
@@ -540,7 +657,7 @@ func TestFingerprintLegacyMD5(t *testing.T) {
 func TestFingerprintSHA256(t *testing.T) {
 	pub, _ := getTestKey()
 	fingerprint := FingerprintSHA256(pub)
-	want := "SHA256:Anr3LjZK8YVpjrxu79myrW9Hrb/wpcMNpVvTq/RcBm8" // ssh-keygen -lf rsa
+	want := "SHA256:fi5+D7UmDZDE9Q2sAVvvlpcQSIakN4DERdINgXd2AnE" // ssh-keygen -lf rsa
 	if fingerprint != want {
 		t.Errorf("got fingerprint %q want %q", fingerprint, want)
 	}
@@ -613,6 +730,83 @@ func TestSKKeys(t *testing.T) {
 		// Corrupted data being passed in
 		if err := pk.Verify(dataBuf, sig); err == nil {
 			t.Errorf("%s with corrupted signature: PublicKey.Verify(%v, %v) passed unexpectedly", d.Name, dataBuf, sig)
+		}
+	}
+}
+
+func TestNewSignerWithAlgos(t *testing.T) {
+	algorithSigner, ok := testSigners["rsa"].(AlgorithmSigner)
+	if !ok {
+		t.Fatal("rsa test signer does not implement the AlgorithmSigner interface")
+	}
+	_, err := NewSignerWithAlgorithms(algorithSigner, nil)
+	if err == nil {
+		t.Error("signer with algos created with no algorithms")
+	}
+
+	_, err = NewSignerWithAlgorithms(algorithSigner, []string{KeyAlgoED25519})
+	if err == nil {
+		t.Error("signer with algos created with invalid algorithms")
+	}
+
+	_, err = NewSignerWithAlgorithms(algorithSigner, []string{CertAlgoRSASHA256v01})
+	if err == nil {
+		t.Error("signer with algos created with certificate algorithms")
+	}
+
+	mas, err := NewSignerWithAlgorithms(algorithSigner, []string{KeyAlgoRSASHA256, KeyAlgoRSASHA512})
+	if err != nil {
+		t.Errorf("unable to create signer with valid algorithms: %v", err)
+	}
+
+	_, err = NewSignerWithAlgorithms(mas, []string{KeyAlgoRSA})
+	if err == nil {
+		t.Error("signer with algos created with restricted algorithms")
+	}
+}
+
+func TestCryptoPublicKey(t *testing.T) {
+	for _, priv := range testSigners {
+		p1 := priv.PublicKey()
+		key, ok := p1.(CryptoPublicKey)
+		if !ok {
+			continue
+		}
+		p2, err := NewPublicKey(key.CryptoPublicKey())
+		if err != nil {
+			t.Fatalf("NewPublicKey(CryptoPublicKey) failed for %s, got: %v", p1.Type(), err)
+		}
+		if !reflect.DeepEqual(p1, p2) {
+			t.Errorf("got %#v in NewPublicKey, want %#v", p2, p1)
+		}
+	}
+	for _, d := range testdata.SKData {
+		p1, _, _, _, err := ParseAuthorizedKey(d.PubKey)
+		if err != nil {
+			t.Fatalf("parseAuthorizedKey returned error: %v", err)
+		}
+		k1, ok := p1.(CryptoPublicKey)
+		if !ok {
+			t.Fatalf("%T does not implement CryptoPublicKey", p1)
+		}
+
+		var p2 PublicKey
+		switch pub := k1.CryptoPublicKey().(type) {
+		case *ecdsa.PublicKey:
+			p2 = &skECDSAPublicKey{
+				application: "ssh:",
+				PublicKey:   *pub,
+			}
+		case ed25519.PublicKey:
+			p2 = &skEd25519PublicKey{
+				application: "ssh:",
+				PublicKey:   pub,
+			}
+		default:
+			t.Fatalf("unexpected type %T from CryptoPublicKey()", pub)
+		}
+		if !reflect.DeepEqual(p1, p2) {
+			t.Errorf("got %#v, want %#v", p2, p1)
 		}
 	}
 }

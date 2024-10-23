@@ -7,7 +7,6 @@ package testtext
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,21 +15,23 @@ import (
 
 // CodeSize builds the given code sample and returns the binary size or en error
 // if an error occurred. The code sample typically will look like this:
-//     package main
-//     import "golang.org/x/text/somepackage"
-//     func main() {
-//         somepackage.Func() // reference Func to cause it to be linked in.
-//     }
+//
+//	package main
+//	import "golang.org/x/text/somepackage"
+//	func main() {
+//	    somepackage.Func() // reference Func to cause it to be linked in.
+//	}
+//
 // See dict_test.go in the display package for an example.
 func CodeSize(s string) (int, error) {
 	// Write the file.
-	tmpdir, err := ioutil.TempDir(os.TempDir(), "testtext")
+	tmpdir, err := os.MkdirTemp(os.TempDir(), "testtext")
 	if err != nil {
 		return 0, fmt.Errorf("testtext: failed to create tmpdir: %v", err)
 	}
 	defer os.RemoveAll(tmpdir)
 	filename := filepath.Join(tmpdir, "main.go")
-	if err := ioutil.WriteFile(filename, []byte(s), 0644); err != nil {
+	if err := os.WriteFile(filename, []byte(s), 0644); err != nil {
 		return 0, fmt.Errorf("testtext: failed to write main.go: %v", err)
 	}
 

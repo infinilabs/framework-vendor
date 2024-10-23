@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build ignore
-// +build ignore
 
 /*
 Input to cgo -godefs.  See README.md
@@ -357,6 +356,7 @@ const (
 	POLLRDNORM   = C.POLLRDNORM
 	POLLWRBAND   = C.POLLWRBAND
 	POLLWRNORM   = C.POLLWRNORM
+	POLLRDHUP    = C.POLLRDHUP
 )
 
 // Capabilities

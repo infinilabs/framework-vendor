@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"golang.org/x/text/internal/testtext"
 	"golang.org/x/text/internal/ucd"
@@ -30,11 +31,11 @@ func TestCompliance(t *testing.T) {
 			t.Fatal(err)
 		}
 		ucd.Parse(r, func(p *ucd.Parser) {
-			name := strings.Replace(path.Join(p.String(0), p.String(1)), " ", "", -1)
+			name := strings.ReplaceAll(path.Join(p.String(0), p.String(1)), " ", "")
 			if skip[name] {
 				return
 			}
-			t.Run(info.Name()+"/"+name, func(t *testing.T) {
+			t.Run(info.Name()+"/"+short(name), func(t *testing.T) {
 				supported := makeTagList(p.String(0))
 				desired := makeTagList(p.String(1))
 				gotCombined, index, conf := NewMatcher(supported).Match(desired...)
@@ -54,6 +55,16 @@ func TestCompliance(t *testing.T) {
 		})
 		return nil
 	})
+}
+
+func short(s string) string {
+	if len(s) <= 50 {
+		return s
+	}
+	var i int
+	for i = 1; i < utf8.UTFMax && !utf8.RuneStart(s[50-i]); i++ {
+	}
+	return s[:50-i] + "…"
 }
 
 var skip = map[string]bool{
@@ -99,7 +110,7 @@ func makeTagList(s string) (tags []Tag) {
 func TestMatchStrings(t *testing.T) {
 	testCases := []struct {
 		supported string
-		desired   string // strings separted by |
+		desired   string // strings separated by |
 		tag       string
 		index     int
 	}{{
@@ -224,11 +235,25 @@ func (t haveTag) String() string {
 	return fmt.Sprintf("%v:%d:%v:%v-%v|%v", t.tag, t.index, t.conf, t.maxRegion, t.maxScript, t.altScript)
 }
 
+func TestIssue43834(t *testing.T) {
+	matcher := NewMatcher([]Tag{English})
+
+	// ZZ is the largest region code and should not cause overflow.
+	desired, _, err := ParseAcceptLanguage("en-ZZ")
+	if err != nil {
+		t.Error(err)
+	}
+	_, i, _ := matcher.Match(desired...)
+	if i != 0 {
+		t.Errorf("got %v; want 0", i)
+	}
+}
+
 func TestBestMatchAlloc(t *testing.T) {
 	m := NewMatcher(makeTagList("en sr nl"))
 	// Go allocates when creating a list of tags from a single tag!
 	list := []Tag{English}
-	avg := testtext.AllocsPerRun(1, func() {
+	avg := testtext.AllocsPerRun(100, func() {
 		m.Match(list...)
 	})
 	if avg > 0 {

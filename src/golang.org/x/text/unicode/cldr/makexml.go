@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build ignore
+//go:build ignore
 
 // This tool generates types for the various XML formats of CLDR.
 package main
@@ -14,7 +14,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"regexp"
@@ -29,7 +28,7 @@ func main() {
 	flag.Parse()
 
 	r := gen.OpenCLDRCoreZip()
-	buffer, err := ioutil.ReadAll(r)
+	buffer, err := io.ReadAll(r)
 	if err != nil {
 		log.Fatal("Could not read zip file")
 	}

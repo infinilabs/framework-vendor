@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build linux
-// +build linux
 
 package unix
 
@@ -254,7 +253,7 @@ func Test_anyToSockaddr(t *testing.T) {
 			proto: makeProto(^0),
 		},
 		{
-			name: "AF_VSOCK emtpy",
+			name: "AF_VSOCK empty",
 			rsa:  sockaddrVMToAny(RawSockaddrVM{}),
 			err:  EAFNOSUPPORT,
 		},
@@ -518,9 +517,19 @@ func TestSockaddrUnix_sockaddr(t *testing.T) {
 			slen: 2, // family (uint16)
 		},
 		{
-			name: "abstract",
+			name: "abstract_starting_with_at",
 			sa: &SockaddrUnix{
 				Name: "@",
+			},
+			raw: &RawSockaddrUnix{
+				Family: AF_UNIX,
+			},
+			slen: 3, // family (uint16) + NULL
+		},
+		{
+			name: "abstract_starting_with_null",
+			sa: &SockaddrUnix{
+				Name: "\x00",
 			},
 			raw: &RawSockaddrUnix{
 				Family: AF_UNIX,

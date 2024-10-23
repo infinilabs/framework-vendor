@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build !windows,!solaris,!js
+//go:build !windows && !js && !wasip1
 
 package test
 
@@ -13,6 +13,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -20,14 +22,21 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+func skipIfIssue64959(t *testing.T, err error) {
+	if err != nil && runtime.GOOS == "darwin" && strings.Contains(err.Error(), "ssh: unexpected packet in response to channel open: <nil>") {
+		t.Helper()
+		t.Skipf("skipping test broken on some versions of macOS; see https://go.dev/issue/64959")
+	}
+}
+
 func TestRunCommandSuccess(t *testing.T) {
 	server := newServer(t)
-	defer server.Shutdown()
 	conn := server.Dial(clientConfig())
 	defer conn.Close()
 
 	session, err := conn.NewSession()
 	if err != nil {
+		skipIfIssue64959(t, err)
 		t.Fatalf("session failed: %v", err)
 	}
 	defer session.Close()
@@ -39,7 +48,6 @@ func TestRunCommandSuccess(t *testing.T) {
 
 func TestHostKeyCheck(t *testing.T) {
 	server := newServer(t)
-	defer server.Shutdown()
 
 	conf := clientConfig()
 	hostDB := hostKeyDB()
@@ -61,12 +69,12 @@ func TestHostKeyCheck(t *testing.T) {
 
 func TestRunCommandStdin(t *testing.T) {
 	server := newServer(t)
-	defer server.Shutdown()
 	conn := server.Dial(clientConfig())
 	defer conn.Close()
 
 	session, err := conn.NewSession()
 	if err != nil {
+		skipIfIssue64959(t, err)
 		t.Fatalf("session failed: %v", err)
 	}
 	defer session.Close()
@@ -84,12 +92,12 @@ func TestRunCommandStdin(t *testing.T) {
 
 func TestRunCommandStdinError(t *testing.T) {
 	server := newServer(t)
-	defer server.Shutdown()
 	conn := server.Dial(clientConfig())
 	defer conn.Close()
 
 	session, err := conn.NewSession()
 	if err != nil {
+		skipIfIssue64959(t, err)
 		t.Fatalf("session failed: %v", err)
 	}
 	defer session.Close()
@@ -108,12 +116,12 @@ func TestRunCommandStdinError(t *testing.T) {
 
 func TestRunCommandFailed(t *testing.T) {
 	server := newServer(t)
-	defer server.Shutdown()
 	conn := server.Dial(clientConfig())
 	defer conn.Close()
 
 	session, err := conn.NewSession()
 	if err != nil {
+		skipIfIssue64959(t, err)
 		t.Fatalf("session failed: %v", err)
 	}
 	defer session.Close()
@@ -125,12 +133,12 @@ func TestRunCommandFailed(t *testing.T) {
 
 func TestRunCommandWeClosed(t *testing.T) {
 	server := newServer(t)
-	defer server.Shutdown()
 	conn := server.Dial(clientConfig())
 	defer conn.Close()
 
 	session, err := conn.NewSession()
 	if err != nil {
+		skipIfIssue64959(t, err)
 		t.Fatalf("session failed: %v", err)
 	}
 	err = session.Shell()
@@ -145,12 +153,12 @@ func TestRunCommandWeClosed(t *testing.T) {
 
 func TestFuncLargeRead(t *testing.T) {
 	server := newServer(t)
-	defer server.Shutdown()
 	conn := server.Dial(clientConfig())
 	defer conn.Close()
 
 	session, err := conn.NewSession()
 	if err != nil {
+		skipIfIssue64959(t, err)
 		t.Fatalf("unable to create new session: %s", err)
 	}
 
@@ -177,7 +185,6 @@ func TestFuncLargeRead(t *testing.T) {
 
 func TestKeyChange(t *testing.T) {
 	server := newServer(t)
-	defer server.Shutdown()
 	conf := clientConfig()
 	hostDB := hostKeyDB()
 	conf.HostKeyCallback = hostDB.Check
@@ -188,6 +195,7 @@ func TestKeyChange(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		session, err := conn.NewSession()
 		if err != nil {
+			skipIfIssue64959(t, err)
 			t.Fatalf("unable to create new session: %s", err)
 		}
 
@@ -224,12 +232,12 @@ func TestValidTerminalMode(t *testing.T) {
 		t.Skipf("skipping on %s", runtime.GOOS)
 	}
 	server := newServer(t)
-	defer server.Shutdown()
 	conn := server.Dial(clientConfig())
 	defer conn.Close()
 
 	session, err := conn.NewSession()
 	if err != nil {
+		skipIfIssue64959(t, err)
 		t.Fatalf("session failed: %v", err)
 	}
 	defer session.Close()
@@ -254,15 +262,31 @@ func TestValidTerminalMode(t *testing.T) {
 		t.Fatalf("session failed: %s", err)
 	}
 
-	stdin.Write([]byte("stty -a && exit\n"))
+	if _, err := io.WriteString(stdin, "echo && echo SHELL $SHELL && stty -a && exit\n"); err != nil {
+		t.Fatal(err)
+	}
 
-	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, stdout); err != nil {
+	buf := new(strings.Builder)
+	if _, err := io.Copy(buf, stdout); err != nil {
 		t.Fatalf("reading failed: %s", err)
 	}
 
+	if testing.Verbose() {
+		t.Logf("echo && echo SHELL $SHELL && stty -a && exit:\n%s", buf)
+	}
+
+	shellLine := regexp.MustCompile("(?m)^SHELL (.*)$").FindStringSubmatch(buf.String())
+	if len(shellLine) != 2 {
+		t.Fatalf("missing output from echo SHELL $SHELL")
+	}
+	switch shell := filepath.Base(strings.TrimSpace(shellLine[1])); shell {
+	case "sh", "bash":
+	default:
+		t.Skipf("skipping test on non-Bourne shell %q", shell)
+	}
+
 	if sttyOutput := buf.String(); !strings.Contains(sttyOutput, "-echo ") {
-		t.Fatalf("terminal mode failure: expected -echo in stty output, got %s", sttyOutput)
+		t.Fatal("terminal mode failure: expected -echo in stty output")
 	}
 }
 
@@ -273,12 +297,12 @@ func TestWindowChange(t *testing.T) {
 		t.Skipf("skipping on %s", runtime.GOOS)
 	}
 	server := newServer(t)
-	defer server.Shutdown()
 	conn := server.Dial(clientConfig())
 	defer conn.Close()
 
 	session, err := conn.NewSession()
 	if err != nil {
+		skipIfIssue64959(t, err)
 		t.Fatalf("session failed: %v", err)
 	}
 	defer session.Close()
@@ -321,7 +345,6 @@ func TestWindowChange(t *testing.T) {
 
 func testOneCipher(t *testing.T, cipher string, cipherOrder []string) {
 	server := newServer(t)
-	defer server.Shutdown()
 	conf := clientConfig()
 	conf.Ciphers = []string{cipher}
 	// Don't fail if sshd doesn't have the cipher.
@@ -334,14 +357,10 @@ func testOneCipher(t *testing.T, cipher string, cipherOrder []string) {
 
 	numBytes := 4096
 
-	// Exercise sending data to the server
-	if _, _, err := conn.Conn.SendRequest("drop-me", false, make([]byte, numBytes)); err != nil {
-		t.Fatalf("SendRequest: %v", err)
-	}
-
 	// Exercise receiving data from the server
 	session, err := conn.NewSession()
 	if err != nil {
+		skipIfIssue64959(t, err)
 		t.Fatalf("NewSession: %v", err)
 	}
 
@@ -352,6 +371,11 @@ func testOneCipher(t *testing.T, cipher string, cipherOrder []string) {
 
 	if len(out) != numBytes {
 		t.Fatalf("got %d bytes, want %d bytes", len(out), numBytes)
+	}
+
+	// Exercise sending data to the server
+	if _, _, err := conn.Conn.SendRequest("drop-me", false, make([]byte, numBytes)); err != nil {
+		t.Fatalf("SendRequest: %v", err)
 	}
 }
 
@@ -380,7 +404,6 @@ func TestMACs(t *testing.T) {
 	for _, mac := range macOrder {
 		t.Run(mac, func(t *testing.T) {
 			server := newServer(t)
-			defer server.Shutdown()
 			conf := clientConfig()
 			conf.MACs = []string{mac}
 			// Don't fail if sshd doesn't have the MAC.
@@ -403,10 +426,12 @@ func TestKeyExchanges(t *testing.T) {
 	// are not included in the default list of supported kex so we have to add them
 	// here manually.
 	kexOrder = append(kexOrder, "diffie-hellman-group-exchange-sha1", "diffie-hellman-group-exchange-sha256")
+	// The key exchange algorithms diffie-hellman-group16-sha512 is disabled by
+	// default so we add it here manually.
+	kexOrder = append(kexOrder, "diffie-hellman-group16-sha512")
 	for _, kex := range kexOrder {
 		t.Run(kex, func(t *testing.T) {
 			server := newServer(t)
-			defer server.Shutdown()
 			conf := clientConfig()
 			// Don't fail if sshd doesn't have the kex.
 			conf.KeyExchanges = append([]string{kex}, kexOrder...)
@@ -423,7 +448,6 @@ func TestKeyExchanges(t *testing.T) {
 func TestClientAuthAlgorithms(t *testing.T) {
 	for _, key := range []string{
 		"rsa",
-		"dsa",
 		"ecdsa",
 		"ed25519",
 	} {
@@ -441,8 +465,75 @@ func TestClientAuthAlgorithms(t *testing.T) {
 			} else {
 				t.Errorf("failed for key %q", key)
 			}
-
-			server.Shutdown()
 		})
+	}
+}
+
+func TestClientAuthDisconnect(t *testing.T) {
+	// Use a static key that is not accepted by server.
+	// This key has been generated with following ssh-keygen command and
+	// used exclusively in this unit test:
+	// $ ssh-keygen -t RSA -b 2048 -f /tmp/static_key \
+	//   -C "Static RSA key for golang.org/x/crypto/ssh unit test"
+
+	const privKeyData = `-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAABFwAAAAdzc2gtcn
+NhAAAAAwEAAQAAAQEAwV1Zg3MqX27nIQQNWd8V09P4q4F1fx7H2xNJdL3Yg3y91GFLJ92+
+0IiGV8n1VMGL/71PPhzyqBpUYSTpWjiU2JZSfA+iTg1GJBcOaEOA6vrXsTtXTHZ//mOT4d
+mlvuP4+9NqfCBLGXN7ZJpT+amkD8AVW9YW9QN3ipY61ZWxPaAocVpDd8rVgJTk54KvaPa7
+t4ddOSQDQq61aubIDR1Z3P+XjkB4piWOsbck3HJL+veTALy12C09tAhwUnZUAXS+DjhxOL
+xpDVclF/yXYhAvBvsjwyk/OC3+nK9F799hpQZsjxmbP7oN+tGwz06BUcAKi7u7QstENvvk
+85SDZy1q1QAAA/A7ylbJO8pWyQAAAAdzc2gtcnNhAAABAQDBXVmDcypfbuchBA1Z3xXT0/
+irgXV/HsfbE0l0vdiDfL3UYUsn3b7QiIZXyfVUwYv/vU8+HPKoGlRhJOlaOJTYllJ8D6JO
+DUYkFw5oQ4Dq+texO1dMdn/+Y5Ph2aW+4/j702p8IEsZc3tkmlP5qaQPwBVb1hb1A3eKlj
+rVlbE9oChxWkN3ytWAlOTngq9o9ru3h105JANCrrVq5sgNHVnc/5eOQHimJY6xtyTcckv6
+95MAvLXYLT20CHBSdlQBdL4OOHE4vGkNVyUX/JdiEC8G+yPDKT84Lf6cr0Xv32GlBmyPGZ
+s/ug360bDPToFRwAqLu7tCy0Q2++TzlINnLWrVAAAAAwEAAQAAAQAIvPDHMiyIxgCksGPF
+uyv9F9U4XjVip8/abE9zkAMJWW5++wuT/bRlBOUPRrWIXZEM9ETbtsqswo3Wxah+7CjRIH
+qR7SdFlYTP1jPk4yIKXF4OvggBUPySkMpAGJ9hwOMW8Ymcb4gn77JJ4aMoWIcXssje+XiC
+8iO+4UWU3SV2i6K7flK1UDCI5JVCyBr3DVf3QhMOgvwJl9TgD7FzWy1hkjuZq/Pzdv+fA2
+OfrUFiSukLNolidNoI9+KWa1yxixE+B2oN4Xan3ZbqGbL6Wc1dB+K9h/bNcu+SKf7fXWRi
+/vVG44A61xGDZzen1+eQlqFp7narkKXoaU71+45VXDThAAAAgBPWUdQykEEm0yOS6hPIW+
+hS8z1LXWGTEcag9fMwJXKE7cQFO3LEk+dXMbClHdhD/ydswOZYGSNepxwvmo/a5LiO2ulp
+W+5tnsNhcK3skdaf71t+boUEXBNZ6u3WNTkU7tDN8h9tebI+xlNceDGSGjOlNoHQVMKZdA
+W9TA4ZqXUPAAAAgQDWU0UZVOSCAOODPz4PYsbFKdCfXNP8O4+t9txyc9E3hsLAsVs+CpVX
+Gr219MGLrublzAxojipyzuQb6Tp1l9nsu7VkcBrPL8I1tokz0AyTnmNF3A9KszBal7gGNS
+a2qYuf6JO4cub1KzonxUJQHZPZq9YhCxOtDwTd+uyHZiPy9QAAAIEA5vayd+nfVJgCKTdf
+z5MFsxBSUj/cAYg7JYPS/0bZ5bEkLosL22wl5Tm/ZftJa8apkyBPhguAWt6jEWLoDiK+kn
+Fv0SaEq1HUdXgWmISVnWzv2pxdAtq/apmbxTg3iIJyrAwEDo13iImR3k6rNPx1m3i/jX56
+HLcvWM4Y6bFzbGEAAAA0U3RhdGljIFJTQSBrZXkgZm9yIGdvbGFuZy5vcmcveC9jcnlwdG
+8vc3NoIHVuaXQgdGVzdAECAwQFBgc=
+-----END OPENSSH PRIVATE KEY-----`
+
+	signer, err := ssh.ParsePrivateKey([]byte(privKeyData))
+	if err != nil {
+		t.Fatalf("failed to create signer from key: %v", err)
+	}
+
+	// Start server with MaxAuthTries 1 and publickey and password auth
+	// enabled
+	server := newServerForConfig(t, "MaxAuthTries", map[string]string{})
+
+	// Connect to server, expect failure, that PublicKeysCallback is called
+	// and that PasswordCallback is not called.
+	publicKeysCallbackCalled := false
+	config := clientConfig()
+	config.Auth = []ssh.AuthMethod{
+		ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
+			publicKeysCallbackCalled = true
+			return []ssh.Signer{signer}, nil
+		}),
+		ssh.PasswordCallback(func() (string, error) {
+			t.Errorf("unexpected call to PasswordCallback()")
+			return "notaverygoodpassword", nil
+		}),
+	}
+	client, err := server.TryDial(config)
+	if err == nil {
+		t.Errorf("expected TryDial() to fail")
+		_ = client.Close()
+	}
+	if !publicKeysCallbackCalled {
+		t.Errorf("expected PublicKeysCallback() to be called")
 	}
 }
