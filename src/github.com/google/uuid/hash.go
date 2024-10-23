@@ -12,11 +12,17 @@ import (
 
 // Well known namespace IDs and UUIDs
 var (
-	NameSpaceDNS  = Must(Parse("6ba7b810-9dad-11d1-80b4-00c04fd430c8"))
-	NameSpaceURL  = Must(Parse("6ba7b811-9dad-11d1-80b4-00c04fd430c8"))
-	NameSpaceOID  = Must(Parse("6ba7b812-9dad-11d1-80b4-00c04fd430c8"))
-	NameSpaceX500 = Must(Parse("6ba7b814-9dad-11d1-80b4-00c04fd430c8"))
+	NameSpaceDNS  = MustParse("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
+	NameSpaceURL  = MustParse("6ba7b811-9dad-11d1-80b4-00c04fd430c8")
+	NameSpaceOID  = MustParse("6ba7b812-9dad-11d1-80b4-00c04fd430c8")
+	NameSpaceX500 = MustParse("6ba7b814-9dad-11d1-80b4-00c04fd430c8")
 	Nil           UUID // empty UUID, all zeros
+
+	// The Max UUID is special form of UUID that is specified to have all 128 bits set to 1.
+	Max = UUID{
+		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+	}
 )
 
 // NewHash returns a new UUID derived from the hash of space concatenated with
@@ -26,13 +32,13 @@ var (
 // NewMD5 and NewSHA1.
 func NewHash(h hash.Hash, space UUID, data []byte, version int) UUID {
 	h.Reset()
-	h.Write(space[:])
-	h.Write(data)
+	h.Write(space[:]) //nolint:errcheck
+	h.Write(data)     //nolint:errcheck
 	s := h.Sum(nil)
 	var uuid UUID
 	copy(uuid[:], s)
 	uuid[6] = (uuid[6] & 0x0f) | uint8((version&0xf)<<4)
-	uuid[8] = (uuid[8] & 0x3f) | 0x80 // RFC 4122 variant
+	uuid[8] = (uuid[8] & 0x3f) | 0x80 // RFC 9562 variant
 	return uuid
 }
 

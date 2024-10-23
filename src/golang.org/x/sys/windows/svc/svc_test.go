@@ -3,13 +3,11 @@
 // license that can be found in the LICENSE file.
 
 //go:build windows
-// +build windows
 
 package svc_test
 
 import (
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -77,11 +75,15 @@ func stopAndDeleteIfInstalled(t *testing.T, m *mgr.Mgr, name string) {
 }
 
 func TestExample(t *testing.T) {
-	if testing.Short() && os.Getenv("GO_BUILDER_NAME") != "" {
-		t.Skip("skipping test in short mode - it modifies system services")
+	if os.Getenv("GO_BUILDER_NAME") == "" {
+		// Don't install services on arbitrary users' machines.
+		t.Skip("skipping test that modifies system services: GO_BUILDER_NAME not set")
+	}
+	if testing.Short() {
+		t.Skip("skipping test in short mode that modifies system services")
 	}
 
-	const name = "myservice"
+	const name = "svctestservice"
 
 	m, err := mgr.Connect()
 	if err != nil {
@@ -89,13 +91,7 @@ func TestExample(t *testing.T) {
 	}
 	defer m.Disconnect()
 
-	dir, err := ioutil.TempDir("", "svc")
-	if err != nil {
-		t.Fatalf("failed to create temp directory: %v", err)
-	}
-	defer os.RemoveAll(dir)
-
-	exepath := filepath.Join(dir, "a.exe")
+	exepath := filepath.Join(t.TempDir(), "a.exe")
 	o, err := exec.Command("go", "build", "-o", exepath, "golang.org/x/sys/windows/svc/example").CombinedOutput()
 	if err != nil {
 		t.Fatalf("failed to build service program: %v\n%v", err, string(o))
@@ -103,7 +99,7 @@ func TestExample(t *testing.T) {
 
 	stopAndDeleteIfInstalled(t, m, name)
 
-	s, err := m.CreateService(name, exepath, mgr.Config{DisplayName: "my service"}, "is", "auto-started")
+	s, err := m.CreateService(name, exepath, mgr.Config{DisplayName: "x-sys svc test service"}, "-name", name)
 	if err != nil {
 		t.Fatalf("CreateService(%s) failed: %v", name, err)
 	}
@@ -141,7 +137,7 @@ func TestExample(t *testing.T) {
 		t.Fatalf("Delete failed: %s", err)
 	}
 
-	out, err := exec.Command("wevtutil.exe", "qe", "Application", "/q:*[System[Provider[@Name='myservice']]]", "/rd:true", "/c:10").CombinedOutput()
+	out, err := exec.Command("wevtutil.exe", "qe", "Application", "/q:*[System[Provider[@Name='"+name+"']]]", "/rd:true", "/c:10").CombinedOutput()
 	if err != nil {
 		t.Fatalf("wevtutil failed: %v\n%v", err, string(out))
 	}
@@ -149,7 +145,7 @@ func TestExample(t *testing.T) {
 	// Test context passing (see servicemain in sys_386.s and sys_amd64.s).
 	want += "-123456"
 	if !strings.Contains(string(out), want) {
-		t.Errorf("%q string does not contain %q", string(out), want)
+		t.Errorf("%q string does not contain %q", out, want)
 	}
 }
 
@@ -159,7 +155,7 @@ func TestIsAnInteractiveSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !isInteractive {
-		t.Error("IsAnInteractiveSession retuns false when running interactively.")
+		t.Error("IsAnInteractiveSession returns false when running interactively.")
 	}
 }
 
@@ -169,7 +165,7 @@ func TestIsWindowsService(t *testing.T) {
 		t.Fatal(err)
 	}
 	if isSvc {
-		t.Error("IsWindowsService retuns true when not running in a service.")
+		t.Error("IsWindowsService returns true when not running in a service.")
 	}
 }
 
@@ -178,11 +174,11 @@ func TestIsWindowsServiceWhenParentExits(t *testing.T) {
 		// in parent process
 
 		// Start the child and exit quickly.
-		child := exec.Command(os.Args[0], "-test.run=TestIsWindowsServiceWhenParentExits")
+		child := exec.Command(os.Args[0], "-test.run=^TestIsWindowsServiceWhenParentExits$")
 		child.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=child")
 		err := child.Start()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, fmt.Sprintf("child start failed: %v", err))
+			fmt.Fprintf(os.Stderr, "child start failed: %v", err)
 			os.Exit(1)
 		}
 		os.Exit(0)
@@ -202,9 +198,9 @@ func TestIsWindowsServiceWhenParentExits(t *testing.T) {
 			msg = err.Error()
 		}
 		if isSvc {
-			msg = "IsWindowsService retuns true when not running in a service."
+			msg = "IsWindowsService returns true when not running in a service."
 		}
-		err = ioutil.WriteFile(dumpPath, []byte(msg), 0644)
+		err = os.WriteFile(dumpPath, []byte(msg), 0644)
 		if err != nil {
 			// We cannot report this error. But main test will notice
 			// that we did not create dump file.
@@ -217,7 +213,7 @@ func TestIsWindowsServiceWhenParentExits(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		childDumpPath := filepath.Join(t.TempDir(), "issvc.txt")
 
-		parent := exec.Command(os.Args[0], "-test.run=TestIsWindowsServiceWhenParentExits")
+		parent := exec.Command(os.Args[0], "-test.run=^TestIsWindowsServiceWhenParentExits$")
 		parent.Env = append(os.Environ(),
 			"GO_WANT_HELPER_PROCESS=parent",
 			"GO_WANT_HELPER_PROCESS_FILE="+childDumpPath)
@@ -231,12 +227,12 @@ func TestIsWindowsServiceWhenParentExits(t *testing.T) {
 			}
 			time.Sleep(100 * time.Millisecond)
 			if i > 10 {
-				t.Fatal("timed out waiting for child ouput file to be created.")
+				t.Fatal("timed out waiting for child output file to be created.")
 			}
 		}
-		childOutput, err := ioutil.ReadFile(childDumpPath)
+		childOutput, err := os.ReadFile(childDumpPath)
 		if err != nil {
-			t.Fatalf("reading child ouput failed: %v", err)
+			t.Fatalf("reading child output failed: %v", err)
 		}
 		if got, want := string(childOutput), ""; got != want {
 			t.Fatalf("child output: want %q, got %q", want, got)

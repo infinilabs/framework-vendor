@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build ignore
-// +build ignore
 
 /*
 Input to cgo -godefs.  See README.md
@@ -177,6 +176,12 @@ type XSockbuf C.struct_xsockbuf
 type XVSockPgen C.struct_xvsockpgen
 
 type _Socklen C.socklen_t
+
+type SaeAssocID C.sae_associd_t
+
+type SaeConnID C.sae_connid_t
+
+type SaEndpoints C.struct_sa_endpoints
 
 type Xucred C.struct_xucred
 

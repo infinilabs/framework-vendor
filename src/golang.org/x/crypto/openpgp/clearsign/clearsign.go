@@ -7,7 +7,13 @@
 //
 // Clearsigned messages are cryptographically signed, but the contents of the
 // message are kept in plaintext so that it can be read without special tools.
-package clearsign // import "golang.org/x/crypto/openpgp/clearsign"
+//
+// Deprecated: this package is unmaintained except for security fixes. New
+// applications should consider a more focused, modern alternative to OpenPGP
+// for their specific task. If you are required to interoperate with OpenPGP
+// systems and need a maintained package, consider a community fork.
+// See https://golang.org/issue/44226.
+package clearsign
 
 import (
 	"bufio"

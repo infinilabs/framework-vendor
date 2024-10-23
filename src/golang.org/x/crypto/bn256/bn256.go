@@ -23,7 +23,7 @@
 // elliptic curve. This package is frozen, and not implemented in constant time.
 // There is a more complete implementation at github.com/cloudflare/bn256, but
 // note that it suffers from the same security issues of the underlying curve.
-package bn256 // import "golang.org/x/crypto/bn256"
+package bn256
 
 import (
 	"crypto/rand"
@@ -162,7 +162,7 @@ type G2 struct {
 	p *twistPoint
 }
 
-// RandomG1 returns x and g₂ˣ where x is a random, non-zero number read from r.
+// RandomG2 returns x and g₂ˣ where x is a random, non-zero number read from r.
 func RandomG2(r io.Reader) (*big.Int, *G2, error) {
 	var k *big.Int
 	var err error

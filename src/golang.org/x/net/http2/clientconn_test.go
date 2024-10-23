@@ -9,12 +9,12 @@ package http2
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"reflect"
-	"slices"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -59,6 +59,7 @@ func TestTestClientConn(t *testing.T) {
 		streamID:  rt.streamID(),
 		endStream: true,
 		size:      10,
+		multiple:  true,
 	})
 
 	// tc.writeHeaders sends a HEADERS frame back to the client.
@@ -93,17 +94,15 @@ type testClientConn struct {
 	tr    *Transport
 	fr    *Framer
 	cc    *ClientConn
-	hooks *testSyncHooks
+	group *synctestGroup
+	testConnFramer
 
 	encbuf bytes.Buffer
 	enc    *hpack.Encoder
 
 	roundtrips []*testRoundTrip
 
-	rerr          error        // returned by Read
-	netConnClosed bool         // set when the ClientConn closes the net.Conn
-	rbuf          bytes.Buffer // sent to the test conn
-	wbuf          bytes.Buffer // sent by the test conn
+	netconn *synctestNetConn
 }
 
 func newTestClientConnFromClientConn(t *testing.T, cc *ClientConn) *testClientConn {
@@ -111,19 +110,28 @@ func newTestClientConnFromClientConn(t *testing.T, cc *ClientConn) *testClientCo
 		t:     t,
 		tr:    cc.t,
 		cc:    cc,
-		hooks: cc.t.syncHooks,
+		group: cc.t.transportTestHooks.group.(*synctestGroup),
 	}
-	cc.tconn = (*testClientConnNetConn)(tc)
+	cli, srv := synctestNetPipe(tc.group)
+	srv.SetReadDeadline(tc.group.Now())
+	srv.autoWait = true
+	tc.netconn = srv
 	tc.enc = hpack.NewEncoder(&tc.encbuf)
-	tc.fr = NewFramer(&tc.rbuf, &tc.wbuf)
-	tc.fr.ReadMetaHeaders = hpack.NewDecoder(initialHeaderTableSize, nil)
+
+	// all writes and reads are finished.
+	//
+	// cli is the ClientConn's side, srv is the side controlled by the test.
+	cc.tconn = cli
+	tc.fr = NewFramer(srv, srv)
+	tc.testConnFramer = testConnFramer{
+		t:   t,
+		fr:  tc.fr,
+		dec: hpack.NewDecoder(initialHeaderTableSize, nil),
+	}
+
 	tc.fr.SetMaxReadFrameSize(10 << 20)
 	t.Cleanup(func() {
-		tc.sync()
-		if tc.rerr == nil {
-			tc.rerr = io.EOF
-		}
-		tc.sync()
+		tc.closeWrite()
 	})
 	return tc
 }
@@ -132,7 +140,7 @@ func (tc *testClientConn) readClientPreface() {
 	tc.t.Helper()
 	// Read the client's HTTP/2 preface, sent prior to any HTTP/2 frames.
 	buf := make([]byte, len(clientPreface))
-	if _, err := io.ReadFull(&tc.wbuf, buf); err != nil {
+	if _, err := io.ReadFull(tc.netconn, buf); err != nil {
 		tc.t.Fatalf("reading preface: %v", err)
 	}
 	if !bytes.Equal(buf, clientPreface) {
@@ -140,12 +148,12 @@ func (tc *testClientConn) readClientPreface() {
 	}
 }
 
-func newTestClientConn(t *testing.T, opts ...func(*Transport)) *testClientConn {
+func newTestClientConn(t *testing.T, opts ...any) *testClientConn {
 	t.Helper()
 
 	tt := newTestTransport(t, opts...)
 	const singleUse = false
-	_, err := tt.tr.newClientConn(nil, singleUse, tt.tr.syncHooks)
+	_, err := tt.tr.newClientConn(nil, singleUse)
 	if err != nil {
 		t.Fatalf("newClientConn: %v", err)
 	}
@@ -156,182 +164,35 @@ func newTestClientConn(t *testing.T, opts ...func(*Transport)) *testClientConn {
 // sync waits for the ClientConn under test to reach a stable state,
 // with all goroutines blocked on some input.
 func (tc *testClientConn) sync() {
-	tc.hooks.waitInactive()
+	tc.group.Wait()
 }
 
 // advance advances synthetic time by a duration.
 func (tc *testClientConn) advance(d time.Duration) {
-	tc.hooks.advance(d)
+	tc.group.AdvanceTime(d)
 	tc.sync()
 }
 
 // hasFrame reports whether a frame is available to be read.
 func (tc *testClientConn) hasFrame() bool {
-	return tc.wbuf.Len() > 0
+	return len(tc.netconn.Peek()) > 0
 }
 
-// readFrame reads the next frame from the conn.
-func (tc *testClientConn) readFrame() Frame {
-	if tc.wbuf.Len() == 0 {
-		return nil
-	}
-	fr, err := tc.fr.ReadFrame()
-	if err != nil {
-		return nil
-	}
-	return fr
+// isClosed reports whether the peer has closed the connection.
+func (tc *testClientConn) isClosed() bool {
+	return tc.netconn.IsClosedByPeer()
 }
 
-// testClientConnReadFrame reads a frame of a specific type from the conn.
-func testClientConnReadFrame[T any](tc *testClientConn) T {
-	tc.t.Helper()
-	var v T
-	fr := tc.readFrame()
-	if fr == nil {
-		tc.t.Fatalf("got no frame, want frame %T", v)
-	}
-	v, ok := fr.(T)
-	if !ok {
-		tc.t.Fatalf("got frame %T, want %T", fr, v)
-	}
-	return v
-}
-
-// wantFrameType reads the next frame from the conn.
-// It produces an error if the frame type is not the expected value.
-func (tc *testClientConn) wantFrameType(want FrameType) {
-	tc.t.Helper()
-	fr := tc.readFrame()
-	if fr == nil {
-		tc.t.Fatalf("got no frame, want frame %v", want)
-	}
-	if got := fr.Header().Type; got != want {
-		tc.t.Fatalf("got frame %v, want %v", got, want)
-	}
-}
-
-// wantUnorderedFrames reads frames from the conn until every condition in want has been satisfied.
-//
-// want is a list of func(*SomeFrame) bool.
-// wantUnorderedFrames will call each func with frames of the appropriate type
-// until the func returns true.
-// It calls t.Fatal if an unexpected frame is received (no func has that frame type,
-// or all funcs with that type have returned true), or if the conn runs out of frames
-// with unsatisfied funcs.
-//
-// Example:
-//
-//	// Read a SETTINGS frame, and any number of DATA frames for a stream.
-//	// The SETTINGS frame may appear anywhere in the sequence.
-//	// The last DATA frame must indicate the end of the stream.
-//	tc.wantUnorderedFrames(
-//		func(f *SettingsFrame) bool {
-//			return true
-//		},
-//		func(f *DataFrame) bool {
-//			return f.StreamEnded()
-//		},
-//	)
-func (tc *testClientConn) wantUnorderedFrames(want ...any) {
-	tc.t.Helper()
-	want = slices.Clone(want)
-	seen := 0
-frame:
-	for seen < len(want) && !tc.t.Failed() {
-		fr := tc.readFrame()
-		if fr == nil {
-			break
-		}
-		for i, f := range want {
-			if f == nil {
-				continue
-			}
-			typ := reflect.TypeOf(f)
-			if typ.Kind() != reflect.Func ||
-				typ.NumIn() != 1 ||
-				typ.NumOut() != 1 ||
-				typ.Out(0) != reflect.TypeOf(true) {
-				tc.t.Fatalf("expected func(*SomeFrame) bool, got %T", f)
-			}
-			if typ.In(0) == reflect.TypeOf(fr) {
-				out := reflect.ValueOf(f).Call([]reflect.Value{reflect.ValueOf(fr)})
-				if out[0].Bool() {
-					want[i] = nil
-					seen++
-				}
-				continue frame
-			}
-		}
-		tc.t.Errorf("got unexpected frame type %T", fr)
-	}
-	if seen < len(want) {
-		for _, f := range want {
-			if f == nil {
-				continue
-			}
-			tc.t.Errorf("did not see expected frame: %v", reflect.TypeOf(f).In(0))
-		}
-		tc.t.Fatalf("did not see %v expected frame types", len(want)-seen)
-	}
-}
-
-type wantHeader struct {
-	streamID  uint32
-	endStream bool
-	header    http.Header
-}
-
-// wantHeaders reads a HEADERS frame and potential CONTINUATION frames,
-// and asserts that they contain the expected headers.
-func (tc *testClientConn) wantHeaders(want wantHeader) {
-	tc.t.Helper()
-	got := testClientConnReadFrame[*MetaHeadersFrame](tc)
-	if got, want := got.StreamID, want.streamID; got != want {
-		tc.t.Fatalf("got stream ID %v, want %v", got, want)
-	}
-	if got, want := got.StreamEnded(), want.endStream; got != want {
-		tc.t.Fatalf("got stream ended %v, want %v", got, want)
-	}
-	gotHeader := make(http.Header)
-	for _, f := range got.Fields {
-		gotHeader[f.Name] = append(gotHeader[f.Name], f.Value)
-	}
-	for k, v := range want.header {
-		if !reflect.DeepEqual(v, gotHeader[k]) {
-			tc.t.Fatalf("got header %q = %q; want %q", k, v, gotHeader[k])
-		}
-	}
-}
-
-type wantData struct {
-	streamID  uint32
-	endStream bool
-	size      int
-}
-
-// wantData reads zero or more DATA frames, and asserts that they match the expectation.
-func (tc *testClientConn) wantData(want wantData) {
-	tc.t.Helper()
-	gotSize := 0
-	gotEndStream := false
-	for tc.hasFrame() && !gotEndStream {
-		data := testClientConnReadFrame[*DataFrame](tc)
-		gotSize += len(data.Data())
-		if data.StreamEnded() {
-			gotEndStream = true
-		}
-	}
-	if gotSize != want.size {
-		tc.t.Fatalf("got %v bytes of DATA frames, want %v", gotSize, want.size)
-	}
-	if gotEndStream != want.endStream {
-		tc.t.Fatalf("after %v bytes of DATA frames, got END_STREAM=%v; want %v", gotSize, gotEndStream, want.endStream)
-	}
+// closeWrite causes the net.Conn used by the ClientConn to return a error
+// from Read calls.
+func (tc *testClientConn) closeWrite() {
+	tc.netconn.Close()
 }
 
 // testRequestBody is a Request.Body for use in tests.
 type testRequestBody struct {
-	tc *testClientConn
+	tc   *testClientConn
+	gate gate
 
 	// At most one of buf or bytes can be set at any given time:
 	buf   bytes.Buffer // specific bytes to read from the body
@@ -342,16 +203,22 @@ type testRequestBody struct {
 
 func (tc *testClientConn) newRequestBody() *testRequestBody {
 	b := &testRequestBody{
-		tc: tc,
+		tc:   tc,
+		gate: newGate(),
 	}
 	return b
 }
 
+func (b *testRequestBody) unlock() {
+	b.gate.unlock(b.buf.Len() > 0 || b.bytes > 0 || b.err != nil)
+}
+
 // Read is called by the ClientConn to read from a request body.
 func (b *testRequestBody) Read(p []byte) (n int, _ error) {
-	b.tc.cc.syncHooks.blockUntil(func() bool {
-		return b.buf.Len() > 0 || b.bytes > 0 || b.err != nil
-	})
+	if err := b.gate.waitAndLock(context.Background()); err != nil {
+		return 0, err
+	}
+	defer b.unlock()
 	switch {
 	case b.buf.Len() > 0:
 		return b.buf.Read(p)
@@ -376,6 +243,9 @@ func (b *testRequestBody) Close() error {
 
 // writeBytes adds n arbitrary bytes to the body.
 func (b *testRequestBody) writeBytes(n int) {
+	defer b.tc.sync()
+	b.gate.lock()
+	defer b.unlock()
 	b.bytes += n
 	b.checkWrite()
 	b.tc.sync()
@@ -383,9 +253,11 @@ func (b *testRequestBody) writeBytes(n int) {
 
 // Write adds bytes to the body.
 func (b *testRequestBody) Write(p []byte) (int, error) {
+	defer b.tc.sync()
+	b.gate.lock()
+	defer b.unlock()
 	n, err := b.buf.Write(p)
 	b.checkWrite()
-	b.tc.sync()
 	return n, err
 }
 
@@ -400,8 +272,10 @@ func (b *testRequestBody) checkWrite() {
 
 // closeWithError sets an error which will be returned by Read.
 func (b *testRequestBody) closeWithError(err error) {
+	defer b.tc.sync()
+	b.gate.lock()
+	defer b.unlock()
 	b.err = err
-	b.tc.sync()
 }
 
 // roundTrip starts a RoundTrip call.
@@ -414,13 +288,14 @@ func (tc *testClientConn) roundTrip(req *http.Request) *testRoundTrip {
 		donec: make(chan struct{}),
 	}
 	tc.roundtrips = append(tc.roundtrips, rt)
-	tc.hooks.newstream = func(cs *clientStream) { rt.cs = cs }
-	tc.cc.goRun(func() {
+	go func() {
+		tc.group.Join()
 		defer close(rt.donec)
-		rt.resp, rt.respErr = tc.cc.RoundTrip(req)
-	})
+		rt.resp, rt.respErr = tc.cc.roundTrip(req, func(cs *clientStream) {
+			rt.id.Store(cs.ID)
+		})
+	}()
 	tc.sync()
-	tc.hooks.newstream = nil
 
 	tc.t.Cleanup(func() {
 		if !rt.done() {
@@ -443,38 +318,6 @@ func (tc *testClientConn) greet(settings ...Setting) {
 	tc.wantFrameType(FrameSettings) // acknowledgement
 }
 
-func (tc *testClientConn) writeSettings(settings ...Setting) {
-	tc.t.Helper()
-	if err := tc.fr.WriteSettings(settings...); err != nil {
-		tc.t.Fatal(err)
-	}
-	tc.sync()
-}
-
-func (tc *testClientConn) writeSettingsAck() {
-	tc.t.Helper()
-	if err := tc.fr.WriteSettingsAck(); err != nil {
-		tc.t.Fatal(err)
-	}
-	tc.sync()
-}
-
-func (tc *testClientConn) writeData(streamID uint32, endStream bool, data []byte) {
-	tc.t.Helper()
-	if err := tc.fr.WriteData(streamID, endStream, data); err != nil {
-		tc.t.Fatal(err)
-	}
-	tc.sync()
-}
-
-func (tc *testClientConn) writeDataPadded(streamID uint32, endStream bool, data, pad []byte) {
-	tc.t.Helper()
-	if err := tc.fr.WriteDataPadded(streamID, endStream, data, pad); err != nil {
-		tc.t.Fatal(err)
-	}
-	tc.sync()
-}
-
 // makeHeaderBlockFragment encodes headers in a form suitable for inclusion
 // in a HEADERS or CONTINUATION frame.
 //
@@ -488,87 +331,6 @@ func (tc *testClientConn) makeHeaderBlockFragment(s ...string) []byte {
 		tc.enc.WriteField(hpack.HeaderField{Name: s[i], Value: s[i+1]})
 	}
 	return tc.encbuf.Bytes()
-}
-
-func (tc *testClientConn) writeHeaders(p HeadersFrameParam) {
-	tc.t.Helper()
-	if err := tc.fr.WriteHeaders(p); err != nil {
-		tc.t.Fatal(err)
-	}
-	tc.sync()
-}
-
-// writeHeadersMode writes header frames, as modified by mode:
-//
-//   - noHeader: Don't write the header.
-//   - oneHeader: Write a single HEADERS frame.
-//   - splitHeader: Write a HEADERS frame and CONTINUATION frame.
-func (tc *testClientConn) writeHeadersMode(mode headerType, p HeadersFrameParam) {
-	tc.t.Helper()
-	switch mode {
-	case noHeader:
-	case oneHeader:
-		tc.writeHeaders(p)
-	case splitHeader:
-		if len(p.BlockFragment) < 2 {
-			panic("too small")
-		}
-		contData := p.BlockFragment[1:]
-		contEnd := p.EndHeaders
-		p.BlockFragment = p.BlockFragment[:1]
-		p.EndHeaders = false
-		tc.writeHeaders(p)
-		tc.writeContinuation(p.StreamID, contEnd, contData)
-	default:
-		panic("bogus mode")
-	}
-}
-
-func (tc *testClientConn) writeContinuation(streamID uint32, endHeaders bool, headerBlockFragment []byte) {
-	tc.t.Helper()
-	if err := tc.fr.WriteContinuation(streamID, endHeaders, headerBlockFragment); err != nil {
-		tc.t.Fatal(err)
-	}
-	tc.sync()
-}
-
-func (tc *testClientConn) writeRSTStream(streamID uint32, code ErrCode) {
-	tc.t.Helper()
-	if err := tc.fr.WriteRSTStream(streamID, code); err != nil {
-		tc.t.Fatal(err)
-	}
-	tc.sync()
-}
-
-func (tc *testClientConn) writePing(ack bool, data [8]byte) {
-	tc.t.Helper()
-	if err := tc.fr.WritePing(ack, data); err != nil {
-		tc.t.Fatal(err)
-	}
-	tc.sync()
-}
-
-func (tc *testClientConn) writeGoAway(maxStreamID uint32, code ErrCode, debugData []byte) {
-	tc.t.Helper()
-	if err := tc.fr.WriteGoAway(maxStreamID, code, debugData); err != nil {
-		tc.t.Fatal(err)
-	}
-	tc.sync()
-}
-
-func (tc *testClientConn) writeWindowUpdate(streamID, incr uint32) {
-	tc.t.Helper()
-	if err := tc.fr.WriteWindowUpdate(streamID, incr); err != nil {
-		tc.t.Fatal(err)
-	}
-	tc.sync()
-}
-
-// closeWrite causes the net.Conn used by the ClientConn to return a error
-// from Read calls.
-func (tc *testClientConn) closeWrite(err error) {
-	tc.rerr = err
-	tc.sync()
 }
 
 // inflowWindow returns the amount of inbound flow control available for a stream,
@@ -593,15 +355,16 @@ type testRoundTrip struct {
 	resp    *http.Response
 	respErr error
 	donec   chan struct{}
-	cs      *clientStream
+	id      atomic.Uint32
 }
 
 // streamID returns the HTTP/2 stream ID of the request.
 func (rt *testRoundTrip) streamID() uint32 {
-	if rt.cs == nil {
+	id := rt.id.Load()
+	if id == 0 {
 		panic("stream ID unknown")
 	}
-	return rt.cs.ID
+	return id
 }
 
 // done reports whether RoundTrip has returned.
@@ -712,58 +475,44 @@ func diffHeaders(got, want http.Header) string {
 	return fmt.Sprintf("got:  %v\nwant: %v", got, want)
 }
 
-// testClientConnNetConn implements net.Conn.
-type testClientConnNetConn testClientConn
-
-func (nc *testClientConnNetConn) Read(b []byte) (n int, err error) {
-	nc.cc.syncHooks.blockUntil(func() bool {
-		return nc.rerr != nil || nc.rbuf.Len() > 0
-	})
-	if nc.rbuf.Len() > 0 {
-		return nc.rbuf.Read(b)
-	}
-	return 0, nc.rerr
-}
-
-func (nc *testClientConnNetConn) Write(b []byte) (n int, err error) {
-	return nc.wbuf.Write(b)
-}
-
-func (nc *testClientConnNetConn) Close() error {
-	nc.netConnClosed = true
-	return nil
-}
-
-func (*testClientConnNetConn) LocalAddr() (_ net.Addr)            { return }
-func (*testClientConnNetConn) RemoteAddr() (_ net.Addr)           { return }
-func (*testClientConnNetConn) SetDeadline(t time.Time) error      { return nil }
-func (*testClientConnNetConn) SetReadDeadline(t time.Time) error  { return nil }
-func (*testClientConnNetConn) SetWriteDeadline(t time.Time) error { return nil }
-
 // A testTransport allows testing Transport.RoundTrip against fake servers.
 // Tests that aren't specifically exercising RoundTrip's retry loop or connection pooling
 // should use testClientConn instead.
 type testTransport struct {
-	t  *testing.T
-	tr *Transport
+	t     *testing.T
+	tr    *Transport
+	group *synctestGroup
 
 	ccs []*testClientConn
 }
 
-func newTestTransport(t *testing.T, opts ...func(*Transport)) *testTransport {
-	tr := &Transport{
-		syncHooks: newTestSyncHooks(),
-	}
-	for _, o := range opts {
-		o(tr)
-	}
-
+func newTestTransport(t *testing.T, opts ...any) *testTransport {
 	tt := &testTransport{
-		t:  t,
-		tr: tr,
+		t:     t,
+		group: newSynctest(time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)),
 	}
-	tr.syncHooks.newclientconn = func(cc *ClientConn) {
-		tt.ccs = append(tt.ccs, newTestClientConnFromClientConn(t, cc))
+	tt.group.Join()
+
+	tr := &Transport{}
+	for _, o := range opts {
+		switch o := o.(type) {
+		case func(*http.Transport):
+			if tr.t1 == nil {
+				tr.t1 = &http.Transport{}
+			}
+			o(tr.t1)
+		case func(*Transport):
+			o(tr)
+		}
+	}
+	tt.tr = tr
+
+	tr.transportTestHooks = &transportTestHooks{
+		group: tt.group,
+		newclientconn: func(cc *ClientConn) {
+			tc := newTestClientConnFromClientConn(t, cc)
+			tt.ccs = append(tt.ccs, tc)
+		},
 	}
 
 	t.Cleanup(func() {
@@ -771,20 +520,18 @@ func newTestTransport(t *testing.T, opts ...func(*Transport)) *testTransport {
 		if len(tt.ccs) > 0 {
 			t.Fatalf("%v test ClientConns created, but not examined by test", len(tt.ccs))
 		}
-		if tt.tr.syncHooks.total != 0 {
-			t.Errorf("%v goroutines still running after test completed", tt.tr.syncHooks.total)
-		}
+		tt.group.Close(t)
 	})
 
 	return tt
 }
 
 func (tt *testTransport) sync() {
-	tt.tr.syncHooks.waitInactive()
+	tt.group.Wait()
 }
 
 func (tt *testTransport) advance(d time.Duration) {
-	tt.tr.syncHooks.advance(d)
+	tt.group.AdvanceTime(d)
 	tt.sync()
 }
 
@@ -801,6 +548,7 @@ func (tt *testTransport) getConn() *testClientConn {
 	tt.ccs = tt.ccs[1:]
 	tc.sync()
 	tc.readClientPreface()
+	tc.sync()
 	return tc
 }
 
@@ -809,10 +557,11 @@ func (tt *testTransport) roundTrip(req *http.Request) *testRoundTrip {
 		t:     tt.t,
 		donec: make(chan struct{}),
 	}
-	tt.tr.syncHooks.goRun(func() {
+	go func() {
+		tt.group.Join()
 		defer close(rt.donec)
 		rt.resp, rt.respErr = tt.tr.RoundTrip(req)
-	})
+	}()
 	tt.sync()
 
 	tt.t.Cleanup(func() {

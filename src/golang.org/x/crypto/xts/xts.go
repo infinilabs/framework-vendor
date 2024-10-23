@@ -21,7 +21,7 @@
 //
 // Note that XTS is usually not appropriate for any use besides disk encryption.
 // Most users should use an AEAD mode like GCM (from crypto/cipher.NewGCM) instead.
-package xts // import "golang.org/x/crypto/xts"
+package xts
 
 import (
 	"crypto/cipher"
@@ -29,7 +29,7 @@ import (
 	"errors"
 	"sync"
 
-	"golang.org/x/crypto/internal/subtle"
+	"golang.org/x/crypto/internal/alias"
 )
 
 // Cipher contains an expanded key structure. It is safe for concurrent use if
@@ -75,7 +75,7 @@ func (c *Cipher) Encrypt(ciphertext, plaintext []byte, sectorNum uint64) {
 	if len(plaintext)%blockSize != 0 {
 		panic("xts: plaintext is not a multiple of the block size")
 	}
-	if subtle.InexactOverlap(ciphertext[:len(plaintext)], plaintext) {
+	if alias.InexactOverlap(ciphertext[:len(plaintext)], plaintext) {
 		panic("xts: invalid buffer overlap")
 	}
 
@@ -114,7 +114,7 @@ func (c *Cipher) Decrypt(plaintext, ciphertext []byte, sectorNum uint64) {
 	if len(ciphertext)%blockSize != 0 {
 		panic("xts: ciphertext is not a multiple of the block size")
 	}
-	if subtle.InexactOverlap(plaintext[:len(ciphertext)], ciphertext) {
+	if alias.InexactOverlap(plaintext[:len(ciphertext)], ciphertext) {
 		panic("xts: invalid buffer overlap")
 	}
 

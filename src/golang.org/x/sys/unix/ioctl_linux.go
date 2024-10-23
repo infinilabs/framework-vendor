@@ -58,6 +58,47 @@ func IoctlGetEthtoolDrvinfo(fd int, ifname string) (*EthtoolDrvinfo, error) {
 	return &value, err
 }
 
+// IoctlGetEthtoolTsInfo fetches ethtool timestamping and PHC
+// association for the network device specified by ifname.
+func IoctlGetEthtoolTsInfo(fd int, ifname string) (*EthtoolTsInfo, error) {
+	ifr, err := NewIfreq(ifname)
+	if err != nil {
+		return nil, err
+	}
+
+	value := EthtoolTsInfo{Cmd: ETHTOOL_GET_TS_INFO}
+	ifrd := ifr.withData(unsafe.Pointer(&value))
+
+	err = ioctlIfreqData(fd, SIOCETHTOOL, &ifrd)
+	return &value, err
+}
+
+// IoctlGetHwTstamp retrieves the hardware timestamping configuration
+// for the network device specified by ifname.
+func IoctlGetHwTstamp(fd int, ifname string) (*HwTstampConfig, error) {
+	ifr, err := NewIfreq(ifname)
+	if err != nil {
+		return nil, err
+	}
+
+	value := HwTstampConfig{}
+	ifrd := ifr.withData(unsafe.Pointer(&value))
+
+	err = ioctlIfreqData(fd, SIOCGHWTSTAMP, &ifrd)
+	return &value, err
+}
+
+// IoctlSetHwTstamp updates the hardware timestamping configuration for
+// the network device specified by ifname.
+func IoctlSetHwTstamp(fd int, ifname string, cfg *HwTstampConfig) error {
+	ifr, err := NewIfreq(ifname)
+	if err != nil {
+		return err
+	}
+	ifrd := ifr.withData(unsafe.Pointer(cfg))
+	return ioctlIfreqData(fd, SIOCSHWTSTAMP, &ifrd)
+}
+
 // IoctlGetWatchdogInfo fetches information about a watchdog device from the
 // Linux watchdog API. For more information, see:
 // https://www.kernel.org/doc/html/latest/watchdog/watchdog-api.html.
@@ -230,4 +271,9 @@ func IoctlLoopGetStatus64(fd int) (*LoopInfo64, error) {
 // file descriptor fd using the LOOP_SET_STATUS64 operation.
 func IoctlLoopSetStatus64(fd int, value *LoopInfo64) error {
 	return ioctlPtr(fd, LOOP_SET_STATUS64, unsafe.Pointer(value))
+}
+
+// IoctlLoopConfigure configures all loop device parameters in a single step
+func IoctlLoopConfigure(fd int, value *LoopConfig) error {
+	return ioctlPtr(fd, LOOP_CONFIGURE, unsafe.Pointer(value))
 }

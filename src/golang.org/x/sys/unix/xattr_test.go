@@ -3,13 +3,12 @@
 // license that can be found in the LICENSE file.
 
 //go:build darwin || freebsd || linux || netbsd
-// +build darwin freebsd linux netbsd
 
 package unix_test
 
 import (
-	"io/ioutil"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -18,7 +17,7 @@ import (
 )
 
 func TestXattr(t *testing.T) {
-	defer chtmpdir(t)()
+	chtmpdir(t)
 
 	f := "xattr1"
 	touch(t, f)
@@ -57,8 +56,9 @@ func TestXattr(t *testing.T) {
 	xattrs := stringsFromByteSlice(buf[:read])
 
 	xattrWant := xattrName
-	if runtime.GOOS == "freebsd" {
-		// On FreeBSD, the namespace is stored separately from the xattr
+	switch runtime.GOOS {
+	case "freebsd", "netbsd":
+		// On FreeBSD and NetBSD, the namespace is stored separately from the xattr
 		// name and Listxattr doesn't return the namespace prefix.
 		xattrWant = strings.TrimPrefix(xattrWant, "user.")
 	}
@@ -66,11 +66,12 @@ func TestXattr(t *testing.T) {
 	for _, name := range xattrs {
 		if name == xattrWant {
 			found = true
+			break
 		}
 	}
 
 	if !found {
-		t.Errorf("Listxattr did not return previously set attribute '%s'", xattrName)
+		t.Errorf("Listxattr did not return previously set attribute %q in attributes %v", xattrName, xattrs)
 	}
 
 	// find size
@@ -118,7 +119,7 @@ func TestXattr(t *testing.T) {
 
 	err = unix.Lsetxattr(s, xattrName, []byte(xattrDataSet), 0)
 	if err != nil {
-		// Linux and Android doen't support xattrs on symlinks according
+		// Linux and Android doesn't support xattrs on symlinks according
 		// to xattr(7), so just test that we get the proper error.
 		if (runtime.GOOS != "linux" && runtime.GOOS != "android") || err != unix.EPERM {
 			t.Fatalf("Lsetxattr: %v", err)
@@ -127,11 +128,10 @@ func TestXattr(t *testing.T) {
 }
 
 func TestFdXattr(t *testing.T) {
-	file, err := ioutil.TempFile("", "TestFdXattr")
+	file, err := os.Create(filepath.Join(t.TempDir(), "TestFdXattr"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(file.Name())
 	defer file.Close()
 
 	fd := int(file.Fd())
@@ -164,8 +164,9 @@ func TestFdXattr(t *testing.T) {
 	xattrs := stringsFromByteSlice(buf[:read])
 
 	xattrWant := xattrName
-	if runtime.GOOS == "freebsd" {
-		// On FreeBSD, the namespace is stored separately from the xattr
+	switch runtime.GOOS {
+	case "freebsd", "netbsd":
+		// On FreeBSD and NetBSD, the namespace is stored separately from the xattr
 		// name and Listxattr doesn't return the namespace prefix.
 		xattrWant = strings.TrimPrefix(xattrWant, "user.")
 	}
@@ -173,11 +174,12 @@ func TestFdXattr(t *testing.T) {
 	for _, name := range xattrs {
 		if name == xattrWant {
 			found = true
+			break
 		}
 	}
 
 	if !found {
-		t.Errorf("Flistxattr did not return previously set attribute '%s'", xattrName)
+		t.Errorf("Flistxattr did not return previously set attribute %q in attributes %v", xattrName, xattrs)
 	}
 
 	// find size

@@ -1,0 +1,39 @@
+name: tests
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+concurrency:
+  group: '${{ github.workflow }} @ ${{ github.event.pull_request.head.label || github.head_ref || github.ref }}'
+  cancel-in-progress: true
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        go-version: [stable, oldstable]
+        platform: [ubuntu-latest]
+        include:
+          # only update test coverage stats with most recent go version on linux
+          - go-version: stable
+            platform: ubuntu-latest
+            update-coverage: true
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5
+      with:
+        go-version: ${{ matrix.go-version }}
+
+    - name: Run go test
+      run: go test -v -race -coverprofile coverage.txt -covermode atomic ./...
+
+    - name: Upload coverage to Codecov
+      if: ${{ matrix.update-coverage }}
+      uses: codecov/codecov-action@54bcd8715eee62d40e33596ef5e8f0f48dbbccab #v4.1.0

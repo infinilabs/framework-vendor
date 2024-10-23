@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-var testUUID = Must(Parse("f47ac10b-58cc-0372-8567-0e02b2c3d479"))
+var testUUID = MustParse("f47ac10b-58cc-0372-8567-0e02b2c3d479")
 
 func TestJSON(t *testing.T) {
 	type S struct {
@@ -28,6 +28,57 @@ func TestJSON(t *testing.T) {
 	}
 	if !reflect.DeepEqual(&s1, &s2) {
 		t.Errorf("got %#v, want %#v", s2, s1)
+	}
+}
+
+func TestJSONUnmarshal(t *testing.T) {
+	type S struct {
+		ID1 UUID
+		ID2 UUID `json:"ID2,omitempty"`
+	}
+
+	testCases := map[string]struct {
+		data           []byte
+		expectedError  error
+		expectedResult UUID
+	}{
+		"success": {
+			data:           []byte(`{"ID1": "f47ac10b-58cc-0372-8567-0e02b2c3d479"}`),
+			expectedError:  nil,
+			expectedResult: testUUID,
+		},
+		"zero": {
+			data:           []byte(`{"ID1": "00000000-0000-0000-0000-000000000000"}`),
+			expectedError:  nil,
+			expectedResult: Nil,
+		},
+		"null": {
+			data:           []byte(`{"ID1": null}`),
+			expectedError:  nil,
+			expectedResult: Nil,
+		},
+		"empty": {
+			data:           []byte(`{"ID1": ""}`),
+			expectedError:  invalidLengthError{len: 0},
+			expectedResult: Nil,
+		},
+		"omitempty": {
+			data:           []byte(`{"ID2": ""}`),
+			expectedError:  invalidLengthError{len: 0},
+			expectedResult: Nil,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			var s S
+			if err := json.Unmarshal(tc.data, &s); err != tc.expectedError {
+				t.Errorf("unexpected error: got %v, want %v", err, tc.expectedError)
+			}
+			if !reflect.DeepEqual(s.ID1, tc.expectedResult) {
+				t.Errorf("got %#v, want %#v", s.ID1, tc.expectedResult)
+			}
+		})
 	}
 }
 
