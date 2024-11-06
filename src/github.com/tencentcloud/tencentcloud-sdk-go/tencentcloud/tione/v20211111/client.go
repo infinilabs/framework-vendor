@@ -1,0 +1,3076 @@
+// Copyright (c) 2017-2018 THL A29 Limited, a Tencent company. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package v20211111
+
+import (
+    "context"
+    "errors"
+    "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
+    tchttp "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/http"
+    "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/profile"
+)
+
+const APIVersion = "2021-11-11"
+
+type Client struct {
+    common.Client
+}
+
+// Deprecated
+func NewClientWithSecretId(secretId, secretKey, region string) (client *Client, err error) {
+    cpf := profile.NewClientProfile()
+    client = &Client{}
+    client.Init(region).WithSecretId(secretId, secretKey).WithProfile(cpf)
+    return
+}
+
+func NewClient(credential common.CredentialIface, region string, clientProfile *profile.ClientProfile) (client *Client, err error) {
+    client = &Client{}
+    client.Init(region).
+        WithCredential(credential).
+        WithProfile(clientProfile)
+    return
+}
+
+
+func NewChatCompletionRequest() (request *ChatCompletionRequest) {
+    request = &ChatCompletionRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "ChatCompletion")
+    
+    
+    return
+}
+
+func NewChatCompletionResponse() (response *ChatCompletionResponse) {
+    response = &ChatCompletionResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// ChatCompletion
+// 该接口支持与自行部署的大模型的聊天。
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  FAILEDOPERATION = "FailedOperation"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETER_MODELISOFFLINE = "InvalidParameter.ModelIsOffline"
+//  INVALIDPARAMETER_TGWINVALIDINTERFACE = "InvalidParameter.TgwInvalidInterface"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+func (c *Client) ChatCompletion(request *ChatCompletionRequest) (response *ChatCompletionResponse, err error) {
+    return c.ChatCompletionWithContext(context.Background(), request)
+}
+
+// ChatCompletion
+// 该接口支持与自行部署的大模型的聊天。
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  FAILEDOPERATION = "FailedOperation"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETER_MODELISOFFLINE = "InvalidParameter.ModelIsOffline"
+//  INVALIDPARAMETER_TGWINVALIDINTERFACE = "InvalidParameter.TgwInvalidInterface"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+func (c *Client) ChatCompletionWithContext(ctx context.Context, request *ChatCompletionRequest) (response *ChatCompletionResponse, err error) {
+    if request == nil {
+        request = NewChatCompletionRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("ChatCompletion require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewChatCompletionResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewCreateDatasetRequest() (request *CreateDatasetRequest) {
+    request = &CreateDatasetRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "CreateDataset")
+    
+    
+    return
+}
+
+func NewCreateDatasetResponse() (response *CreateDatasetResponse) {
+    response = &CreateDatasetResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// CreateDataset
+// 创建数据集
+//
+// 可能返回的错误码:
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  AUTHFAILURE_UNAUTHORIZEDOPERATION = "AuthFailure.UnauthorizedOperation"
+//  FAILEDOPERATION_DCCOSCLIENTERR = "FailedOperation.DCCosClientErr"
+//  FAILEDOPERATION_DCCREATEASYNCTASKERROR = "FailedOperation.DCCreateAsyncTaskError"
+//  FAILEDOPERATION_DCCREATEUSERCOSCLIENTERR = "FailedOperation.DCCreateUserCosClientErr"
+//  FAILEDOPERATION_DCDATAANNOTATIONRPCERR = "FailedOperation.DCDataAnnotationRpcErr"
+//  FAILEDOPERATION_DCDATAREPORPCERR = "FailedOperation.DCDatarepoRpcErr"
+//  FAILEDOPERATION_DCDATASETEXCEEDLIMIT = "FailedOperation.DCDatasetExceedLimit"
+//  FAILEDOPERATION_DCDATASETSTATUSNOTREADY = "FailedOperation.DCDatasetStatusNotReady"
+//  FAILEDOPERATION_DCGETUSERTEMPORARYSECRETERR = "FailedOperation.DCGetUserTemporarySecretErr"
+//  FAILEDOPERATION_DCMARSHALDATAERR = "FailedOperation.DCMarshalDataErr"
+//  FAILEDOPERATION_DCQUERYDATASETCONTENTERR = "FailedOperation.DCQueryDatasetContentErr"
+//  FAILEDOPERATION_DCUNMARSHALDATAERR = "FailedOperation.DCUnmarshalDataErr"
+//  FAILEDOPERATION_DCUNSUPPORTEDOPERATION = "FailedOperation.DCUnsupportedOperation"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_EXECTAGFAIL = "FailedOperation.ExecTagFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETER_VALIDATEERROR = "InvalidParameter.ValidateError"
+//  INVALIDPARAMETERVALUE = "InvalidParameterValue"
+//  INVALIDPARAMETERVALUE_DCANNOTATIONTYPE = "InvalidParameterValue.DCAnnotationType"
+//  INVALIDPARAMETERVALUE_DCCOSPATHINFO = "InvalidParameterValue.DCCosPathInfo"
+//  INVALIDPARAMETERVALUE_DCDATASETANNOTATIONNOTMATCH = "InvalidParameterValue.DCDatasetAnnotationNotMatch"
+//  INVALIDPARAMETERVALUE_DCDATASETIDNOTEXIST = "InvalidParameterValue.DCDatasetIdNotExist"
+//  INVALIDPARAMETERVALUE_DCDATASETNAMEEXIST = "InvalidParameterValue.DCDatasetNameExist"
+//  INVALIDPARAMETERVALUE_DCDATASETTYPE = "InvalidParameterValue.DCDatasetType"
+//  INVALIDPARAMETERVALUE_DCFILTERVALUES = "InvalidParameterValue.DCFilterValues"
+//  MISSINGPARAMETER = "MissingParameter"
+func (c *Client) CreateDataset(request *CreateDatasetRequest) (response *CreateDatasetResponse, err error) {
+    return c.CreateDatasetWithContext(context.Background(), request)
+}
+
+// CreateDataset
+// 创建数据集
+//
+// 可能返回的错误码:
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  AUTHFAILURE_UNAUTHORIZEDOPERATION = "AuthFailure.UnauthorizedOperation"
+//  FAILEDOPERATION_DCCOSCLIENTERR = "FailedOperation.DCCosClientErr"
+//  FAILEDOPERATION_DCCREATEASYNCTASKERROR = "FailedOperation.DCCreateAsyncTaskError"
+//  FAILEDOPERATION_DCCREATEUSERCOSCLIENTERR = "FailedOperation.DCCreateUserCosClientErr"
+//  FAILEDOPERATION_DCDATAANNOTATIONRPCERR = "FailedOperation.DCDataAnnotationRpcErr"
+//  FAILEDOPERATION_DCDATAREPORPCERR = "FailedOperation.DCDatarepoRpcErr"
+//  FAILEDOPERATION_DCDATASETEXCEEDLIMIT = "FailedOperation.DCDatasetExceedLimit"
+//  FAILEDOPERATION_DCDATASETSTATUSNOTREADY = "FailedOperation.DCDatasetStatusNotReady"
+//  FAILEDOPERATION_DCGETUSERTEMPORARYSECRETERR = "FailedOperation.DCGetUserTemporarySecretErr"
+//  FAILEDOPERATION_DCMARSHALDATAERR = "FailedOperation.DCMarshalDataErr"
+//  FAILEDOPERATION_DCQUERYDATASETCONTENTERR = "FailedOperation.DCQueryDatasetContentErr"
+//  FAILEDOPERATION_DCUNMARSHALDATAERR = "FailedOperation.DCUnmarshalDataErr"
+//  FAILEDOPERATION_DCUNSUPPORTEDOPERATION = "FailedOperation.DCUnsupportedOperation"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_EXECTAGFAIL = "FailedOperation.ExecTagFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETER_VALIDATEERROR = "InvalidParameter.ValidateError"
+//  INVALIDPARAMETERVALUE = "InvalidParameterValue"
+//  INVALIDPARAMETERVALUE_DCANNOTATIONTYPE = "InvalidParameterValue.DCAnnotationType"
+//  INVALIDPARAMETERVALUE_DCCOSPATHINFO = "InvalidParameterValue.DCCosPathInfo"
+//  INVALIDPARAMETERVALUE_DCDATASETANNOTATIONNOTMATCH = "InvalidParameterValue.DCDatasetAnnotationNotMatch"
+//  INVALIDPARAMETERVALUE_DCDATASETIDNOTEXIST = "InvalidParameterValue.DCDatasetIdNotExist"
+//  INVALIDPARAMETERVALUE_DCDATASETNAMEEXIST = "InvalidParameterValue.DCDatasetNameExist"
+//  INVALIDPARAMETERVALUE_DCDATASETTYPE = "InvalidParameterValue.DCDatasetType"
+//  INVALIDPARAMETERVALUE_DCFILTERVALUES = "InvalidParameterValue.DCFilterValues"
+//  MISSINGPARAMETER = "MissingParameter"
+func (c *Client) CreateDatasetWithContext(ctx context.Context, request *CreateDatasetRequest) (response *CreateDatasetResponse, err error) {
+    if request == nil {
+        request = NewCreateDatasetRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("CreateDataset require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewCreateDatasetResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewCreateModelServiceRequest() (request *CreateModelServiceRequest) {
+    request = &CreateModelServiceRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "CreateModelService")
+    
+    
+    return
+}
+
+func NewCreateModelServiceResponse() (response *CreateModelServiceResponse) {
+    response = &CreateModelServiceResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// CreateModelService
+// 用于创建、发布一个新的模型服务
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_APIGATEWAYQUERYFAILED = "FailedOperation.ApiGatewayQueryFailed"
+//  FAILEDOPERATION_BILLINGQUERYFAILED = "FailedOperation.BillingQueryFailed"
+//  FAILEDOPERATION_CLUSTERQUERYFAILED = "FailedOperation.ClusterQueryFailed"
+//  FAILEDOPERATION_DUPLICATENAME = "FailedOperation.DuplicateName"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_INSUFFICIENTWHITELISTQUOTA = "FailedOperation.InsufficientWhitelistQuota"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  FAILEDOPERATION_STSQUERYFAILED = "FailedOperation.StsQueryFailed"
+//  FAILEDOPERATION_UNKNOWNINSTANCETYPE = "FailedOperation.UnknownInstanceType"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETER_MODELFILEINVALID = "InvalidParameter.ModelFileInvalid"
+//  INVALIDPARAMETER_VALIDATEERROR = "InvalidParameter.ValidateError"
+//  MISSINGPARAMETER = "MissingParameter"
+//  OPERATIONDENIED = "OperationDenied"
+//  OPERATIONDENIED_BALANCEINSUFFICIENT = "OperationDenied.BalanceInsufficient"
+//  RESOURCEINUSE = "ResourceInUse"
+//  RESOURCEINSUFFICIENT = "ResourceInsufficient"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+//  UNSUPPORTEDOPERATION = "UnsupportedOperation"
+func (c *Client) CreateModelService(request *CreateModelServiceRequest) (response *CreateModelServiceResponse, err error) {
+    return c.CreateModelServiceWithContext(context.Background(), request)
+}
+
+// CreateModelService
+// 用于创建、发布一个新的模型服务
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_APIGATEWAYQUERYFAILED = "FailedOperation.ApiGatewayQueryFailed"
+//  FAILEDOPERATION_BILLINGQUERYFAILED = "FailedOperation.BillingQueryFailed"
+//  FAILEDOPERATION_CLUSTERQUERYFAILED = "FailedOperation.ClusterQueryFailed"
+//  FAILEDOPERATION_DUPLICATENAME = "FailedOperation.DuplicateName"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_INSUFFICIENTWHITELISTQUOTA = "FailedOperation.InsufficientWhitelistQuota"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  FAILEDOPERATION_STSQUERYFAILED = "FailedOperation.StsQueryFailed"
+//  FAILEDOPERATION_UNKNOWNINSTANCETYPE = "FailedOperation.UnknownInstanceType"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETER_MODELFILEINVALID = "InvalidParameter.ModelFileInvalid"
+//  INVALIDPARAMETER_VALIDATEERROR = "InvalidParameter.ValidateError"
+//  MISSINGPARAMETER = "MissingParameter"
+//  OPERATIONDENIED = "OperationDenied"
+//  OPERATIONDENIED_BALANCEINSUFFICIENT = "OperationDenied.BalanceInsufficient"
+//  RESOURCEINUSE = "ResourceInUse"
+//  RESOURCEINSUFFICIENT = "ResourceInsufficient"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+//  UNSUPPORTEDOPERATION = "UnsupportedOperation"
+func (c *Client) CreateModelServiceWithContext(ctx context.Context, request *CreateModelServiceRequest) (response *CreateModelServiceResponse, err error) {
+    if request == nil {
+        request = NewCreateModelServiceRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("CreateModelService require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewCreateModelServiceResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewCreateNotebookRequest() (request *CreateNotebookRequest) {
+    request = &CreateNotebookRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "CreateNotebook")
+    
+    
+    return
+}
+
+func NewCreateNotebookResponse() (response *CreateNotebookResponse) {
+    response = &CreateNotebookResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// CreateNotebook
+// 创建Notebook
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_BINDINGTAGSFAILED = "FailedOperation.BindingTagsFailed"
+//  FAILEDOPERATION_FREEZEBILLFAILED = "FailedOperation.FreezeBillFailed"
+//  FAILEDOPERATION_NOTALLOW = "FailedOperation.NotAllow"
+//  FAILEDOPERATION_UNAUTHORIZEDOPERATION = "FailedOperation.UnauthorizedOperation"
+//  INTERNALERROR = "InternalError"
+//  INTERNALERROR_QUERYRESOURCEGROUPFAILED = "InternalError.QueryResourceGroupFailed"
+//  INTERNALERROR_QUERYSUBNETINFOFAILED = "InternalError.QuerySubnetInfoFailed"
+//  INTERNALERROR_QUERYUSERTMPCREDENTIALFAILED = "InternalError.QueryUserTMPCredentialFailed"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETER_UNSUPPORTEDMULTILOCALDISK = "InvalidParameter.UnsupportedMultiLocalDisk"
+//  INVALIDPARAMETERVALUE = "InvalidParameterValue"
+//  INVALIDPARAMETERVALUE_CODEREPODUPLICATED = "InvalidParameterValue.CodeRepoDuplicated"
+//  INVALIDPARAMETERVALUE_CODEREPONOTFOUND = "InvalidParameterValue.CodeRepoNotFound"
+//  INVALIDPARAMETERVALUE_DATACONFIGNUMLIMITEXCEEDED = "InvalidParameterValue.DataConfigNumLimitExceeded"
+//  INVALIDPARAMETERVALUE_DUPLICATENAME = "InvalidParameterValue.DuplicateName"
+//  INVALIDPARAMETERVALUE_GETCFSMOUNTIPFAILED = "InvalidParameterValue.GetCFSMountIPFailed"
+//  INVALIDPARAMETERVALUE_GETGOOSEFSFAILED = "InvalidParameterValue.GetGooseFSFailed"
+//  INVALIDPARAMETERVALUE_GOOSEFSCONFIGCANNOTEMPTY = "InvalidParameterValue.GooseFSConfigCannotEmpty"
+//  INVALIDPARAMETERVALUE_GOOSEFSNOTEXIST = "InvalidParameterValue.GooseFSNotExist"
+//  INVALIDPARAMETERVALUE_LIFECYCLENOTFOUND = "InvalidParameterValue.LifecycleNotFound"
+//  INVALIDPARAMETERVALUE_NOTALLOWEDTOCREATEFREEVOLUMENOTEBOOKWITHBAREMETALRESOURCEGROUP = "InvalidParameterValue.NotAllowedToCreateFreeVolumeNotebookWithBareMetalResourceGroup"
+//  INVALIDPARAMETERVALUE_NOTALLOWEDTOCREATEFREEVOLUMENOTEBOOKWITHSWRESOURCEGROUP = "InvalidParameterValue.NotAllowedToCreateFreeVolumeNotebookWithSWResourceGroup"
+//  INVALIDPARAMETERVALUE_NOTALLOWEDTOCREATENOTEBOOKWITHBAREMETALRESOURCEGROUP = "InvalidParameterValue.NotAllowedToCreateNotebookWithBareMetalResourceGroup"
+//  INVALIDPARAMETERVALUE_PATHILLEGAL = "InvalidParameterValue.PathIllegal"
+//  INVALIDPARAMETERVALUE_RESOURCECONFIGILLEGAL = "InvalidParameterValue.ResourceConfigIllegal"
+//  INVALIDPARAMETERVALUE_SUBNETNOTFOUND = "InvalidParameterValue.SubnetNotFound"
+//  INVALIDPARAMETERVALUE_TOPICNOTFOUND = "InvalidParameterValue.TopicNotFound"
+//  INVALIDPARAMETERVALUE_UNSUPPORTEDGOOSEFSCONFIG = "InvalidParameterValue.UnsupportedGooseFSConfig"
+//  INVALIDPARAMETERVALUE_UNSUPPORTEDMULTICBSSTORAGE = "InvalidParameterValue.UnsupportedMultiCBSStorage"
+//  OPERATIONDENIED_BALANCEINSUFFICIENT = "OperationDenied.BalanceInsufficient"
+//  OPERATIONDENIED_BILLINGSTATUSRESOURCEINSUFFICIENT = "OperationDenied.BillingStatusResourceInsufficient"
+//  OPERATIONDENIED_IPILLEGAL = "OperationDenied.IpIllegal"
+//  OPERATIONDENIED_MIYINGBALANCEINSUFFICIENT = "OperationDenied.MIYINGBalanceInsufficient"
+//  OPERATIONDENIED_NETWORKCIDRILLEGAL = "OperationDenied.NetworkCidrIllegal"
+//  OPERATIONDENIED_NOTALLOW = "OperationDenied.NotAllow"
+//  OPERATIONDENIED_RESOURCEGROUPINSUFFICIENT = "OperationDenied.ResourceGroupInsufficient"
+//  OPERATIONDENIED_WHITELISTQUOTAEXCEED = "OperationDenied.WhitelistQuotaExceed"
+//  RESOURCEINSUFFICIENT_SSHPORTISCONSUMEDUP = "ResourceInsufficient.SSHPortIsConsumedUp"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  RESOURCENOTFOUND_RESOURCEGROUPNOTFOUND = "ResourceNotFound.ResourceGroupNotFound"
+//  RESOURCEUNAVAILABLE = "ResourceUnavailable"
+//  UNAUTHORIZEDOPERATION = "UnauthorizedOperation"
+//  UNAUTHORIZEDOPERATION_NOPERMISSION = "UnauthorizedOperation.NoPermission"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+func (c *Client) CreateNotebook(request *CreateNotebookRequest) (response *CreateNotebookResponse, err error) {
+    return c.CreateNotebookWithContext(context.Background(), request)
+}
+
+// CreateNotebook
+// 创建Notebook
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_BINDINGTAGSFAILED = "FailedOperation.BindingTagsFailed"
+//  FAILEDOPERATION_FREEZEBILLFAILED = "FailedOperation.FreezeBillFailed"
+//  FAILEDOPERATION_NOTALLOW = "FailedOperation.NotAllow"
+//  FAILEDOPERATION_UNAUTHORIZEDOPERATION = "FailedOperation.UnauthorizedOperation"
+//  INTERNALERROR = "InternalError"
+//  INTERNALERROR_QUERYRESOURCEGROUPFAILED = "InternalError.QueryResourceGroupFailed"
+//  INTERNALERROR_QUERYSUBNETINFOFAILED = "InternalError.QuerySubnetInfoFailed"
+//  INTERNALERROR_QUERYUSERTMPCREDENTIALFAILED = "InternalError.QueryUserTMPCredentialFailed"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETER_UNSUPPORTEDMULTILOCALDISK = "InvalidParameter.UnsupportedMultiLocalDisk"
+//  INVALIDPARAMETERVALUE = "InvalidParameterValue"
+//  INVALIDPARAMETERVALUE_CODEREPODUPLICATED = "InvalidParameterValue.CodeRepoDuplicated"
+//  INVALIDPARAMETERVALUE_CODEREPONOTFOUND = "InvalidParameterValue.CodeRepoNotFound"
+//  INVALIDPARAMETERVALUE_DATACONFIGNUMLIMITEXCEEDED = "InvalidParameterValue.DataConfigNumLimitExceeded"
+//  INVALIDPARAMETERVALUE_DUPLICATENAME = "InvalidParameterValue.DuplicateName"
+//  INVALIDPARAMETERVALUE_GETCFSMOUNTIPFAILED = "InvalidParameterValue.GetCFSMountIPFailed"
+//  INVALIDPARAMETERVALUE_GETGOOSEFSFAILED = "InvalidParameterValue.GetGooseFSFailed"
+//  INVALIDPARAMETERVALUE_GOOSEFSCONFIGCANNOTEMPTY = "InvalidParameterValue.GooseFSConfigCannotEmpty"
+//  INVALIDPARAMETERVALUE_GOOSEFSNOTEXIST = "InvalidParameterValue.GooseFSNotExist"
+//  INVALIDPARAMETERVALUE_LIFECYCLENOTFOUND = "InvalidParameterValue.LifecycleNotFound"
+//  INVALIDPARAMETERVALUE_NOTALLOWEDTOCREATEFREEVOLUMENOTEBOOKWITHBAREMETALRESOURCEGROUP = "InvalidParameterValue.NotAllowedToCreateFreeVolumeNotebookWithBareMetalResourceGroup"
+//  INVALIDPARAMETERVALUE_NOTALLOWEDTOCREATEFREEVOLUMENOTEBOOKWITHSWRESOURCEGROUP = "InvalidParameterValue.NotAllowedToCreateFreeVolumeNotebookWithSWResourceGroup"
+//  INVALIDPARAMETERVALUE_NOTALLOWEDTOCREATENOTEBOOKWITHBAREMETALRESOURCEGROUP = "InvalidParameterValue.NotAllowedToCreateNotebookWithBareMetalResourceGroup"
+//  INVALIDPARAMETERVALUE_PATHILLEGAL = "InvalidParameterValue.PathIllegal"
+//  INVALIDPARAMETERVALUE_RESOURCECONFIGILLEGAL = "InvalidParameterValue.ResourceConfigIllegal"
+//  INVALIDPARAMETERVALUE_SUBNETNOTFOUND = "InvalidParameterValue.SubnetNotFound"
+//  INVALIDPARAMETERVALUE_TOPICNOTFOUND = "InvalidParameterValue.TopicNotFound"
+//  INVALIDPARAMETERVALUE_UNSUPPORTEDGOOSEFSCONFIG = "InvalidParameterValue.UnsupportedGooseFSConfig"
+//  INVALIDPARAMETERVALUE_UNSUPPORTEDMULTICBSSTORAGE = "InvalidParameterValue.UnsupportedMultiCBSStorage"
+//  OPERATIONDENIED_BALANCEINSUFFICIENT = "OperationDenied.BalanceInsufficient"
+//  OPERATIONDENIED_BILLINGSTATUSRESOURCEINSUFFICIENT = "OperationDenied.BillingStatusResourceInsufficient"
+//  OPERATIONDENIED_IPILLEGAL = "OperationDenied.IpIllegal"
+//  OPERATIONDENIED_MIYINGBALANCEINSUFFICIENT = "OperationDenied.MIYINGBalanceInsufficient"
+//  OPERATIONDENIED_NETWORKCIDRILLEGAL = "OperationDenied.NetworkCidrIllegal"
+//  OPERATIONDENIED_NOTALLOW = "OperationDenied.NotAllow"
+//  OPERATIONDENIED_RESOURCEGROUPINSUFFICIENT = "OperationDenied.ResourceGroupInsufficient"
+//  OPERATIONDENIED_WHITELISTQUOTAEXCEED = "OperationDenied.WhitelistQuotaExceed"
+//  RESOURCEINSUFFICIENT_SSHPORTISCONSUMEDUP = "ResourceInsufficient.SSHPortIsConsumedUp"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  RESOURCENOTFOUND_RESOURCEGROUPNOTFOUND = "ResourceNotFound.ResourceGroupNotFound"
+//  RESOURCEUNAVAILABLE = "ResourceUnavailable"
+//  UNAUTHORIZEDOPERATION = "UnauthorizedOperation"
+//  UNAUTHORIZEDOPERATION_NOPERMISSION = "UnauthorizedOperation.NoPermission"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+func (c *Client) CreateNotebookWithContext(ctx context.Context, request *CreateNotebookRequest) (response *CreateNotebookResponse, err error) {
+    if request == nil {
+        request = NewCreateNotebookRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("CreateNotebook require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewCreateNotebookResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewCreatePresignedNotebookUrlRequest() (request *CreatePresignedNotebookUrlRequest) {
+    request = &CreatePresignedNotebookUrlRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "CreatePresignedNotebookUrl")
+    
+    
+    return
+}
+
+func NewCreatePresignedNotebookUrlResponse() (response *CreatePresignedNotebookUrlResponse) {
+    response = &CreatePresignedNotebookUrlResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// CreatePresignedNotebookUrl
+// 生成Notebook访问链接
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_NOTALLOW = "FailedOperation.NotAllow"
+//  FAILEDOPERATION_PODIPNOTFOUND = "FailedOperation.PodIpNotFound"
+//  INTERNALERROR = "InternalError"
+//  INTERNALERROR_QUERYUSERTMPCREDENTIALFAILED = "InternalError.QueryUserTMPCredentialFailed"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETERVALUE = "InvalidParameterValue"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  UNAUTHORIZEDOPERATION = "UnauthorizedOperation"
+//  UNAUTHORIZEDOPERATION_NOPERMISSION = "UnauthorizedOperation.NoPermission"
+func (c *Client) CreatePresignedNotebookUrl(request *CreatePresignedNotebookUrlRequest) (response *CreatePresignedNotebookUrlResponse, err error) {
+    return c.CreatePresignedNotebookUrlWithContext(context.Background(), request)
+}
+
+// CreatePresignedNotebookUrl
+// 生成Notebook访问链接
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_NOTALLOW = "FailedOperation.NotAllow"
+//  FAILEDOPERATION_PODIPNOTFOUND = "FailedOperation.PodIpNotFound"
+//  INTERNALERROR = "InternalError"
+//  INTERNALERROR_QUERYUSERTMPCREDENTIALFAILED = "InternalError.QueryUserTMPCredentialFailed"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETERVALUE = "InvalidParameterValue"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  UNAUTHORIZEDOPERATION = "UnauthorizedOperation"
+//  UNAUTHORIZEDOPERATION_NOPERMISSION = "UnauthorizedOperation.NoPermission"
+func (c *Client) CreatePresignedNotebookUrlWithContext(ctx context.Context, request *CreatePresignedNotebookUrlRequest) (response *CreatePresignedNotebookUrlResponse, err error) {
+    if request == nil {
+        request = NewCreatePresignedNotebookUrlRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("CreatePresignedNotebookUrl require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewCreatePresignedNotebookUrlResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewCreateTrainingModelRequest() (request *CreateTrainingModelRequest) {
+    request = &CreateTrainingModelRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "CreateTrainingModel")
+    
+    
+    return
+}
+
+func NewCreateTrainingModelResponse() (response *CreateTrainingModelResponse) {
+    response = &CreateTrainingModelResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// CreateTrainingModel
+// 导入模型
+//
+// 可能返回的错误码:
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  AUTHFAILURE_UNAUTHORIZEDOPERATION = "AuthFailure.UnauthorizedOperation"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_BINDINGTAGSFAILED = "FailedOperation.BindingTagsFailed"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_EXECTAGFAIL = "FailedOperation.ExecTagFail"
+//  FAILEDOPERATION_MOVEMODELDIRFAILED = "FailedOperation.MoveModelDirFailed"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETERVALUE = "InvalidParameterValue"
+//  LIMITEXCEEDED = "LimitExceeded"
+//  MISSINGPARAMETER = "MissingParameter"
+//  OPERATIONDENIED = "OperationDenied"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+func (c *Client) CreateTrainingModel(request *CreateTrainingModelRequest) (response *CreateTrainingModelResponse, err error) {
+    return c.CreateTrainingModelWithContext(context.Background(), request)
+}
+
+// CreateTrainingModel
+// 导入模型
+//
+// 可能返回的错误码:
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  AUTHFAILURE_UNAUTHORIZEDOPERATION = "AuthFailure.UnauthorizedOperation"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_BINDINGTAGSFAILED = "FailedOperation.BindingTagsFailed"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_EXECTAGFAIL = "FailedOperation.ExecTagFail"
+//  FAILEDOPERATION_MOVEMODELDIRFAILED = "FailedOperation.MoveModelDirFailed"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETERVALUE = "InvalidParameterValue"
+//  LIMITEXCEEDED = "LimitExceeded"
+//  MISSINGPARAMETER = "MissingParameter"
+//  OPERATIONDENIED = "OperationDenied"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+func (c *Client) CreateTrainingModelWithContext(ctx context.Context, request *CreateTrainingModelRequest) (response *CreateTrainingModelResponse, err error) {
+    if request == nil {
+        request = NewCreateTrainingModelRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("CreateTrainingModel require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewCreateTrainingModelResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewDeleteDatasetRequest() (request *DeleteDatasetRequest) {
+    request = &DeleteDatasetRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "DeleteDataset")
+    
+    
+    return
+}
+
+func NewDeleteDatasetResponse() (response *DeleteDatasetResponse) {
+    response = &DeleteDatasetResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// DeleteDataset
+// 删除数据集
+//
+// 可能返回的错误码:
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  AUTHFAILURE_UNAUTHORIZEDOPERATION = "AuthFailure.UnauthorizedOperation"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_DCCOSCLIENTERR = "FailedOperation.DCCosClientErr"
+//  FAILEDOPERATION_DCCREATEASYNCTASKERROR = "FailedOperation.DCCreateAsyncTaskError"
+//  FAILEDOPERATION_DCCREATEUSERCOSCLIENTERR = "FailedOperation.DCCreateUserCosClientErr"
+//  FAILEDOPERATION_DCDATAANNOTATIONRPCERR = "FailedOperation.DCDataAnnotationRpcErr"
+//  FAILEDOPERATION_DCDATAREPORPCERR = "FailedOperation.DCDatarepoRpcErr"
+//  FAILEDOPERATION_DCDATASETEXCEEDLIMIT = "FailedOperation.DCDatasetExceedLimit"
+//  FAILEDOPERATION_DCDATASETSTATUSNOTREADY = "FailedOperation.DCDatasetStatusNotReady"
+//  FAILEDOPERATION_DCGETUSERTEMPORARYSECRETERR = "FailedOperation.DCGetUserTemporarySecretErr"
+//  FAILEDOPERATION_DCMARSHALDATAERR = "FailedOperation.DCMarshalDataErr"
+//  FAILEDOPERATION_DCQUERYDATASETCONTENTERR = "FailedOperation.DCQueryDatasetContentErr"
+//  FAILEDOPERATION_DCUNMARSHALDATAERR = "FailedOperation.DCUnmarshalDataErr"
+//  FAILEDOPERATION_DCUNSUPPORTEDOPERATION = "FailedOperation.DCUnsupportedOperation"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_EXECTAGFAIL = "FailedOperation.ExecTagFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETERVALUE = "InvalidParameterValue"
+//  INVALIDPARAMETERVALUE_DCANNOTATIONTYPE = "InvalidParameterValue.DCAnnotationType"
+//  INVALIDPARAMETERVALUE_DCCOSPATHINFO = "InvalidParameterValue.DCCosPathInfo"
+//  INVALIDPARAMETERVALUE_DCDATASETANNOTATIONNOTMATCH = "InvalidParameterValue.DCDatasetAnnotationNotMatch"
+//  INVALIDPARAMETERVALUE_DCDATASETIDNOTEXIST = "InvalidParameterValue.DCDatasetIdNotExist"
+//  INVALIDPARAMETERVALUE_DCDATASETNAMEEXIST = "InvalidParameterValue.DCDatasetNameExist"
+//  INVALIDPARAMETERVALUE_DCDATASETTYPE = "InvalidParameterValue.DCDatasetType"
+//  INVALIDPARAMETERVALUE_DCFILTERVALUES = "InvalidParameterValue.DCFilterValues"
+//  MISSINGPARAMETER = "MissingParameter"
+func (c *Client) DeleteDataset(request *DeleteDatasetRequest) (response *DeleteDatasetResponse, err error) {
+    return c.DeleteDatasetWithContext(context.Background(), request)
+}
+
+// DeleteDataset
+// 删除数据集
+//
+// 可能返回的错误码:
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  AUTHFAILURE_UNAUTHORIZEDOPERATION = "AuthFailure.UnauthorizedOperation"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_DCCOSCLIENTERR = "FailedOperation.DCCosClientErr"
+//  FAILEDOPERATION_DCCREATEASYNCTASKERROR = "FailedOperation.DCCreateAsyncTaskError"
+//  FAILEDOPERATION_DCCREATEUSERCOSCLIENTERR = "FailedOperation.DCCreateUserCosClientErr"
+//  FAILEDOPERATION_DCDATAANNOTATIONRPCERR = "FailedOperation.DCDataAnnotationRpcErr"
+//  FAILEDOPERATION_DCDATAREPORPCERR = "FailedOperation.DCDatarepoRpcErr"
+//  FAILEDOPERATION_DCDATASETEXCEEDLIMIT = "FailedOperation.DCDatasetExceedLimit"
+//  FAILEDOPERATION_DCDATASETSTATUSNOTREADY = "FailedOperation.DCDatasetStatusNotReady"
+//  FAILEDOPERATION_DCGETUSERTEMPORARYSECRETERR = "FailedOperation.DCGetUserTemporarySecretErr"
+//  FAILEDOPERATION_DCMARSHALDATAERR = "FailedOperation.DCMarshalDataErr"
+//  FAILEDOPERATION_DCQUERYDATASETCONTENTERR = "FailedOperation.DCQueryDatasetContentErr"
+//  FAILEDOPERATION_DCUNMARSHALDATAERR = "FailedOperation.DCUnmarshalDataErr"
+//  FAILEDOPERATION_DCUNSUPPORTEDOPERATION = "FailedOperation.DCUnsupportedOperation"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_EXECTAGFAIL = "FailedOperation.ExecTagFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETERVALUE = "InvalidParameterValue"
+//  INVALIDPARAMETERVALUE_DCANNOTATIONTYPE = "InvalidParameterValue.DCAnnotationType"
+//  INVALIDPARAMETERVALUE_DCCOSPATHINFO = "InvalidParameterValue.DCCosPathInfo"
+//  INVALIDPARAMETERVALUE_DCDATASETANNOTATIONNOTMATCH = "InvalidParameterValue.DCDatasetAnnotationNotMatch"
+//  INVALIDPARAMETERVALUE_DCDATASETIDNOTEXIST = "InvalidParameterValue.DCDatasetIdNotExist"
+//  INVALIDPARAMETERVALUE_DCDATASETNAMEEXIST = "InvalidParameterValue.DCDatasetNameExist"
+//  INVALIDPARAMETERVALUE_DCDATASETTYPE = "InvalidParameterValue.DCDatasetType"
+//  INVALIDPARAMETERVALUE_DCFILTERVALUES = "InvalidParameterValue.DCFilterValues"
+//  MISSINGPARAMETER = "MissingParameter"
+func (c *Client) DeleteDatasetWithContext(ctx context.Context, request *DeleteDatasetRequest) (response *DeleteDatasetResponse, err error) {
+    if request == nil {
+        request = NewDeleteDatasetRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("DeleteDataset require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewDeleteDatasetResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewDeleteModelServiceRequest() (request *DeleteModelServiceRequest) {
+    request = &DeleteModelServiceRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "DeleteModelService")
+    
+    
+    return
+}
+
+func NewDeleteModelServiceResponse() (response *DeleteModelServiceResponse) {
+    response = &DeleteModelServiceResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// DeleteModelService
+// 根据服务id删除模型服务
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_APIGATEWAYQUERYFAILED = "FailedOperation.ApiGatewayQueryFailed"
+//  FAILEDOPERATION_BILLINGQUERYFAILED = "FailedOperation.BillingQueryFailed"
+//  FAILEDOPERATION_CLUSTERQUERYFAILED = "FailedOperation.ClusterQueryFailed"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  FAILEDOPERATION_STSQUERYFAILED = "FailedOperation.StsQueryFailed"
+//  FAILEDOPERATION_UNKNOWNINSTANCETYPE = "FailedOperation.UnknownInstanceType"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  MISSINGPARAMETER = "MissingParameter"
+//  OPERATIONDENIED = "OperationDenied"
+//  OPERATIONDENIED_BALANCEINSUFFICIENT = "OperationDenied.BalanceInsufficient"
+//  RESOURCEINUSE = "ResourceInUse"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  RESOURCEUNAVAILABLE = "ResourceUnavailable"
+//  RESOURCESSOLDOUT = "ResourcesSoldOut"
+//  UNAUTHORIZEDOPERATION = "UnauthorizedOperation"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+//  UNSUPPORTEDOPERATION = "UnsupportedOperation"
+func (c *Client) DeleteModelService(request *DeleteModelServiceRequest) (response *DeleteModelServiceResponse, err error) {
+    return c.DeleteModelServiceWithContext(context.Background(), request)
+}
+
+// DeleteModelService
+// 根据服务id删除模型服务
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_APIGATEWAYQUERYFAILED = "FailedOperation.ApiGatewayQueryFailed"
+//  FAILEDOPERATION_BILLINGQUERYFAILED = "FailedOperation.BillingQueryFailed"
+//  FAILEDOPERATION_CLUSTERQUERYFAILED = "FailedOperation.ClusterQueryFailed"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  FAILEDOPERATION_STSQUERYFAILED = "FailedOperation.StsQueryFailed"
+//  FAILEDOPERATION_UNKNOWNINSTANCETYPE = "FailedOperation.UnknownInstanceType"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  MISSINGPARAMETER = "MissingParameter"
+//  OPERATIONDENIED = "OperationDenied"
+//  OPERATIONDENIED_BALANCEINSUFFICIENT = "OperationDenied.BalanceInsufficient"
+//  RESOURCEINUSE = "ResourceInUse"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  RESOURCEUNAVAILABLE = "ResourceUnavailable"
+//  RESOURCESSOLDOUT = "ResourcesSoldOut"
+//  UNAUTHORIZEDOPERATION = "UnauthorizedOperation"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+//  UNSUPPORTEDOPERATION = "UnsupportedOperation"
+func (c *Client) DeleteModelServiceWithContext(ctx context.Context, request *DeleteModelServiceRequest) (response *DeleteModelServiceResponse, err error) {
+    if request == nil {
+        request = NewDeleteModelServiceRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("DeleteModelService require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewDeleteModelServiceResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewDeleteModelServiceGroupRequest() (request *DeleteModelServiceGroupRequest) {
+    request = &DeleteModelServiceGroupRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "DeleteModelServiceGroup")
+    
+    
+    return
+}
+
+func NewDeleteModelServiceGroupResponse() (response *DeleteModelServiceGroupResponse) {
+    response = &DeleteModelServiceGroupResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// DeleteModelServiceGroup
+// 根据服务组id删除服务组下所有模型服务
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_APIGATEWAYQUERYFAILED = "FailedOperation.ApiGatewayQueryFailed"
+//  FAILEDOPERATION_BILLINGQUERYFAILED = "FailedOperation.BillingQueryFailed"
+//  FAILEDOPERATION_CLUSTERQUERYFAILED = "FailedOperation.ClusterQueryFailed"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  FAILEDOPERATION_STSQUERYFAILED = "FailedOperation.StsQueryFailed"
+//  FAILEDOPERATION_UNKNOWNINSTANCETYPE = "FailedOperation.UnknownInstanceType"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  MISSINGPARAMETER = "MissingParameter"
+//  OPERATIONDENIED = "OperationDenied"
+//  OPERATIONDENIED_BALANCEINSUFFICIENT = "OperationDenied.BalanceInsufficient"
+//  RESOURCEINUSE = "ResourceInUse"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  RESOURCEUNAVAILABLE = "ResourceUnavailable"
+//  RESOURCESSOLDOUT = "ResourcesSoldOut"
+//  UNAUTHORIZEDOPERATION = "UnauthorizedOperation"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+//  UNSUPPORTEDOPERATION = "UnsupportedOperation"
+func (c *Client) DeleteModelServiceGroup(request *DeleteModelServiceGroupRequest) (response *DeleteModelServiceGroupResponse, err error) {
+    return c.DeleteModelServiceGroupWithContext(context.Background(), request)
+}
+
+// DeleteModelServiceGroup
+// 根据服务组id删除服务组下所有模型服务
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_APIGATEWAYQUERYFAILED = "FailedOperation.ApiGatewayQueryFailed"
+//  FAILEDOPERATION_BILLINGQUERYFAILED = "FailedOperation.BillingQueryFailed"
+//  FAILEDOPERATION_CLUSTERQUERYFAILED = "FailedOperation.ClusterQueryFailed"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  FAILEDOPERATION_STSQUERYFAILED = "FailedOperation.StsQueryFailed"
+//  FAILEDOPERATION_UNKNOWNINSTANCETYPE = "FailedOperation.UnknownInstanceType"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  MISSINGPARAMETER = "MissingParameter"
+//  OPERATIONDENIED = "OperationDenied"
+//  OPERATIONDENIED_BALANCEINSUFFICIENT = "OperationDenied.BalanceInsufficient"
+//  RESOURCEINUSE = "ResourceInUse"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  RESOURCEUNAVAILABLE = "ResourceUnavailable"
+//  RESOURCESSOLDOUT = "ResourcesSoldOut"
+//  UNAUTHORIZEDOPERATION = "UnauthorizedOperation"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+//  UNSUPPORTEDOPERATION = "UnsupportedOperation"
+func (c *Client) DeleteModelServiceGroupWithContext(ctx context.Context, request *DeleteModelServiceGroupRequest) (response *DeleteModelServiceGroupResponse, err error) {
+    if request == nil {
+        request = NewDeleteModelServiceGroupRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("DeleteModelServiceGroup require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewDeleteModelServiceGroupResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewDeleteNotebookRequest() (request *DeleteNotebookRequest) {
+    request = &DeleteNotebookRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "DeleteNotebook")
+    
+    
+    return
+}
+
+func NewDeleteNotebookResponse() (response *DeleteNotebookResponse) {
+    response = &DeleteNotebookResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// DeleteNotebook
+// 删除Notebook
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_DELETENOTEBOOKSTORAGEFAILED = "FailedOperation.DeleteNotebookStorageFailed"
+//  FAILEDOPERATION_NOTALLOW = "FailedOperation.NotAllow"
+//  FAILEDOPERATION_UNBINDINGTAGSFAILED = "FailedOperation.UnBindingTagsFailed"
+//  FAILEDOPERATION_UNSUBMITNOTALLOWTOSTOP = "FailedOperation.UnSubmitNotAllowToStop"
+//  FAILEDOPERATION_UNFREEZEBILLFAILED = "FailedOperation.UnfreezeBillFailed"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETERVALUE = "InvalidParameterValue"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  UNAUTHORIZEDOPERATION = "UnauthorizedOperation"
+//  UNAUTHORIZEDOPERATION_NOPERMISSION = "UnauthorizedOperation.NoPermission"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+func (c *Client) DeleteNotebook(request *DeleteNotebookRequest) (response *DeleteNotebookResponse, err error) {
+    return c.DeleteNotebookWithContext(context.Background(), request)
+}
+
+// DeleteNotebook
+// 删除Notebook
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_DELETENOTEBOOKSTORAGEFAILED = "FailedOperation.DeleteNotebookStorageFailed"
+//  FAILEDOPERATION_NOTALLOW = "FailedOperation.NotAllow"
+//  FAILEDOPERATION_UNBINDINGTAGSFAILED = "FailedOperation.UnBindingTagsFailed"
+//  FAILEDOPERATION_UNSUBMITNOTALLOWTOSTOP = "FailedOperation.UnSubmitNotAllowToStop"
+//  FAILEDOPERATION_UNFREEZEBILLFAILED = "FailedOperation.UnfreezeBillFailed"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETERVALUE = "InvalidParameterValue"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  UNAUTHORIZEDOPERATION = "UnauthorizedOperation"
+//  UNAUTHORIZEDOPERATION_NOPERMISSION = "UnauthorizedOperation.NoPermission"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+func (c *Client) DeleteNotebookWithContext(ctx context.Context, request *DeleteNotebookRequest) (response *DeleteNotebookResponse, err error) {
+    if request == nil {
+        request = NewDeleteNotebookRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("DeleteNotebook require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewDeleteNotebookResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewDeleteTrainingModelRequest() (request *DeleteTrainingModelRequest) {
+    request = &DeleteTrainingModelRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "DeleteTrainingModel")
+    
+    
+    return
+}
+
+func NewDeleteTrainingModelResponse() (response *DeleteTrainingModelResponse) {
+    response = &DeleteTrainingModelResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// DeleteTrainingModel
+// 删除模型
+//
+// 可能返回的错误码:
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  AUTHFAILURE_UNAUTHORIZEDOPERATION = "AuthFailure.UnauthorizedOperation"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_EXECTAGFAIL = "FailedOperation.ExecTagFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  RESOURCENOTFOUND_NOMODEL = "ResourceNotFound.NoModel"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+func (c *Client) DeleteTrainingModel(request *DeleteTrainingModelRequest) (response *DeleteTrainingModelResponse, err error) {
+    return c.DeleteTrainingModelWithContext(context.Background(), request)
+}
+
+// DeleteTrainingModel
+// 删除模型
+//
+// 可能返回的错误码:
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  AUTHFAILURE_UNAUTHORIZEDOPERATION = "AuthFailure.UnauthorizedOperation"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_EXECTAGFAIL = "FailedOperation.ExecTagFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  RESOURCENOTFOUND_NOMODEL = "ResourceNotFound.NoModel"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+func (c *Client) DeleteTrainingModelWithContext(ctx context.Context, request *DeleteTrainingModelRequest) (response *DeleteTrainingModelResponse, err error) {
+    if request == nil {
+        request = NewDeleteTrainingModelRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("DeleteTrainingModel require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewDeleteTrainingModelResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewDeleteTrainingModelVersionRequest() (request *DeleteTrainingModelVersionRequest) {
+    request = &DeleteTrainingModelVersionRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "DeleteTrainingModelVersion")
+    
+    
+    return
+}
+
+func NewDeleteTrainingModelVersionResponse() (response *DeleteTrainingModelVersionResponse) {
+    response = &DeleteTrainingModelVersionResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// DeleteTrainingModelVersion
+// 删除模型版本
+//
+// 可能返回的错误码:
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  AUTHFAILURE_UNAUTHORIZEDOPERATION = "AuthFailure.UnauthorizedOperation"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  MISSINGPARAMETER = "MissingParameter"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+func (c *Client) DeleteTrainingModelVersion(request *DeleteTrainingModelVersionRequest) (response *DeleteTrainingModelVersionResponse, err error) {
+    return c.DeleteTrainingModelVersionWithContext(context.Background(), request)
+}
+
+// DeleteTrainingModelVersion
+// 删除模型版本
+//
+// 可能返回的错误码:
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  AUTHFAILURE_UNAUTHORIZEDOPERATION = "AuthFailure.UnauthorizedOperation"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  MISSINGPARAMETER = "MissingParameter"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+func (c *Client) DeleteTrainingModelVersionWithContext(ctx context.Context, request *DeleteTrainingModelVersionRequest) (response *DeleteTrainingModelVersionResponse, err error) {
+    if request == nil {
+        request = NewDeleteTrainingModelVersionRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("DeleteTrainingModelVersion require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewDeleteTrainingModelVersionResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewDescribeBillingResourceGroupRequest() (request *DescribeBillingResourceGroupRequest) {
+    request = &DescribeBillingResourceGroupRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "DescribeBillingResourceGroup")
+    
+    
+    return
+}
+
+func NewDescribeBillingResourceGroupResponse() (response *DescribeBillingResourceGroupResponse) {
+    response = &DescribeBillingResourceGroupResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// DescribeBillingResourceGroup
+// 查询资源组节点列表
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  AUTHFAILURE_NOPERMISSION = "AuthFailure.NoPermission"
+//  AUTHFAILURE_UNAUTHORIZEDOPERATION = "AuthFailure.UnauthorizedOperation"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_CALLCLUSTERFAIL = "FailedOperation.CallClusterFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  FAILEDOPERATION_QUERYTAGFAIL = "FailedOperation.QueryTagFail"
+//  FAILEDOPERATION_RECORDNOTFOUND = "FailedOperation.RecordNotFound"
+//  FAILEDOPERATION_UNMARSHALDATA = "FailedOperation.UnmarshalData"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETERVALUE = "InvalidParameterValue"
+//  INVALIDPARAMETERVALUE_INVALIDFILTER = "InvalidParameterValue.InvalidFilter"
+//  INVALIDPARAMETERVALUE_LIMITEXCEEDED = "InvalidParameterValue.LimitExceeded"
+//  MISSINGPARAMETER = "MissingParameter"
+func (c *Client) DescribeBillingResourceGroup(request *DescribeBillingResourceGroupRequest) (response *DescribeBillingResourceGroupResponse, err error) {
+    return c.DescribeBillingResourceGroupWithContext(context.Background(), request)
+}
+
+// DescribeBillingResourceGroup
+// 查询资源组节点列表
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  AUTHFAILURE_NOPERMISSION = "AuthFailure.NoPermission"
+//  AUTHFAILURE_UNAUTHORIZEDOPERATION = "AuthFailure.UnauthorizedOperation"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_CALLCLUSTERFAIL = "FailedOperation.CallClusterFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  FAILEDOPERATION_QUERYTAGFAIL = "FailedOperation.QueryTagFail"
+//  FAILEDOPERATION_RECORDNOTFOUND = "FailedOperation.RecordNotFound"
+//  FAILEDOPERATION_UNMARSHALDATA = "FailedOperation.UnmarshalData"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETERVALUE = "InvalidParameterValue"
+//  INVALIDPARAMETERVALUE_INVALIDFILTER = "InvalidParameterValue.InvalidFilter"
+//  INVALIDPARAMETERVALUE_LIMITEXCEEDED = "InvalidParameterValue.LimitExceeded"
+//  MISSINGPARAMETER = "MissingParameter"
+func (c *Client) DescribeBillingResourceGroupWithContext(ctx context.Context, request *DescribeBillingResourceGroupRequest) (response *DescribeBillingResourceGroupResponse, err error) {
+    if request == nil {
+        request = NewDescribeBillingResourceGroupRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("DescribeBillingResourceGroup require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewDescribeBillingResourceGroupResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewDescribeBillingResourceGroupsRequest() (request *DescribeBillingResourceGroupsRequest) {
+    request = &DescribeBillingResourceGroupsRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "DescribeBillingResourceGroups")
+    
+    
+    return
+}
+
+func NewDescribeBillingResourceGroupsResponse() (response *DescribeBillingResourceGroupsResponse) {
+    response = &DescribeBillingResourceGroupsResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// DescribeBillingResourceGroups
+// 查询资源组详情
+//
+// 可能返回的错误码:
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  AUTHFAILURE_UNAUTHORIZEDOPERATION = "AuthFailure.UnauthorizedOperation"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_CALLCLUSTERFAIL = "FailedOperation.CallClusterFail"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_EXECTAGFAIL = "FailedOperation.ExecTagFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  FAILEDOPERATION_QUERYTAGFAIL = "FailedOperation.QueryTagFail"
+//  FAILEDOPERATION_UNMARSHALDATA = "FailedOperation.UnmarshalData"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETER_VALIDATEERROR = "InvalidParameter.ValidateError"
+//  INVALIDPARAMETERVALUE_INVALIDFILTER = "InvalidParameterValue.InvalidFilter"
+//  INVALIDPARAMETERVALUE_LIMITEXCEEDED = "InvalidParameterValue.LimitExceeded"
+//  MISSINGPARAMETER = "MissingParameter"
+func (c *Client) DescribeBillingResourceGroups(request *DescribeBillingResourceGroupsRequest) (response *DescribeBillingResourceGroupsResponse, err error) {
+    return c.DescribeBillingResourceGroupsWithContext(context.Background(), request)
+}
+
+// DescribeBillingResourceGroups
+// 查询资源组详情
+//
+// 可能返回的错误码:
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  AUTHFAILURE_UNAUTHORIZEDOPERATION = "AuthFailure.UnauthorizedOperation"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_CALLCLUSTERFAIL = "FailedOperation.CallClusterFail"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_EXECTAGFAIL = "FailedOperation.ExecTagFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  FAILEDOPERATION_QUERYTAGFAIL = "FailedOperation.QueryTagFail"
+//  FAILEDOPERATION_UNMARSHALDATA = "FailedOperation.UnmarshalData"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETER_VALIDATEERROR = "InvalidParameter.ValidateError"
+//  INVALIDPARAMETERVALUE_INVALIDFILTER = "InvalidParameterValue.InvalidFilter"
+//  INVALIDPARAMETERVALUE_LIMITEXCEEDED = "InvalidParameterValue.LimitExceeded"
+//  MISSINGPARAMETER = "MissingParameter"
+func (c *Client) DescribeBillingResourceGroupsWithContext(ctx context.Context, request *DescribeBillingResourceGroupsRequest) (response *DescribeBillingResourceGroupsResponse, err error) {
+    if request == nil {
+        request = NewDescribeBillingResourceGroupsRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("DescribeBillingResourceGroups require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewDescribeBillingResourceGroupsResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewDescribeBillingResourceInstanceRunningJobsRequest() (request *DescribeBillingResourceInstanceRunningJobsRequest) {
+    request = &DescribeBillingResourceInstanceRunningJobsRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "DescribeBillingResourceInstanceRunningJobs")
+    
+    
+    return
+}
+
+func NewDescribeBillingResourceInstanceRunningJobsResponse() (response *DescribeBillingResourceInstanceRunningJobsResponse) {
+    response = &DescribeBillingResourceInstanceRunningJobsResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// DescribeBillingResourceInstanceRunningJobs
+// 查询资源组节点运行中的任务
+//
+// 可能返回的错误码:
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_CALLCLUSTERFAIL = "FailedOperation.CallClusterFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETER_TGWINVALIDINTERFACE = "InvalidParameter.TgwInvalidInterface"
+//  MISSINGPARAMETER = "MissingParameter"
+func (c *Client) DescribeBillingResourceInstanceRunningJobs(request *DescribeBillingResourceInstanceRunningJobsRequest) (response *DescribeBillingResourceInstanceRunningJobsResponse, err error) {
+    return c.DescribeBillingResourceInstanceRunningJobsWithContext(context.Background(), request)
+}
+
+// DescribeBillingResourceInstanceRunningJobs
+// 查询资源组节点运行中的任务
+//
+// 可能返回的错误码:
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_CALLCLUSTERFAIL = "FailedOperation.CallClusterFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETER_TGWINVALIDINTERFACE = "InvalidParameter.TgwInvalidInterface"
+//  MISSINGPARAMETER = "MissingParameter"
+func (c *Client) DescribeBillingResourceInstanceRunningJobsWithContext(ctx context.Context, request *DescribeBillingResourceInstanceRunningJobsRequest) (response *DescribeBillingResourceInstanceRunningJobsResponse, err error) {
+    if request == nil {
+        request = NewDescribeBillingResourceInstanceRunningJobsRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("DescribeBillingResourceInstanceRunningJobs require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewDescribeBillingResourceInstanceRunningJobsResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewDescribeBuildInImagesRequest() (request *DescribeBuildInImagesRequest) {
+    request = &DescribeBuildInImagesRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "DescribeBuildInImages")
+    
+    
+    return
+}
+
+func NewDescribeBuildInImagesResponse() (response *DescribeBuildInImagesResponse) {
+    response = &DescribeBuildInImagesResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// DescribeBuildInImages
+// 获取内置镜像列表
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  FAILEDOPERATION_QUERYBINDINGTAGSFAILED = "FailedOperation.QueryBindingTagsFailed"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  UNAUTHORIZEDOPERATION = "UnauthorizedOperation"
+//  UNAUTHORIZEDOPERATION_NOPERMISSION = "UnauthorizedOperation.NoPermission"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+func (c *Client) DescribeBuildInImages(request *DescribeBuildInImagesRequest) (response *DescribeBuildInImagesResponse, err error) {
+    return c.DescribeBuildInImagesWithContext(context.Background(), request)
+}
+
+// DescribeBuildInImages
+// 获取内置镜像列表
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  FAILEDOPERATION_QUERYBINDINGTAGSFAILED = "FailedOperation.QueryBindingTagsFailed"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  UNAUTHORIZEDOPERATION = "UnauthorizedOperation"
+//  UNAUTHORIZEDOPERATION_NOPERMISSION = "UnauthorizedOperation.NoPermission"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+func (c *Client) DescribeBuildInImagesWithContext(ctx context.Context, request *DescribeBuildInImagesRequest) (response *DescribeBuildInImagesResponse, err error) {
+    if request == nil {
+        request = NewDescribeBuildInImagesRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("DescribeBuildInImages require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewDescribeBuildInImagesResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewDescribeDatasetsRequest() (request *DescribeDatasetsRequest) {
+    request = &DescribeDatasetsRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "DescribeDatasets")
+    
+    
+    return
+}
+
+func NewDescribeDatasetsResponse() (response *DescribeDatasetsResponse) {
+    response = &DescribeDatasetsResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// DescribeDatasets
+// 查询数据集列表
+//
+// 可能返回的错误码:
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  AUTHFAILURE_UNAUTHORIZEDOPERATION = "AuthFailure.UnauthorizedOperation"
+//  FAILEDOPERATION_DCCOSCLIENTERR = "FailedOperation.DCCosClientErr"
+//  FAILEDOPERATION_DCCREATEASYNCTASKERROR = "FailedOperation.DCCreateAsyncTaskError"
+//  FAILEDOPERATION_DCCREATEUSERCOSCLIENTERR = "FailedOperation.DCCreateUserCosClientErr"
+//  FAILEDOPERATION_DCDATAANNOTATIONRPCERR = "FailedOperation.DCDataAnnotationRpcErr"
+//  FAILEDOPERATION_DCDATAREPORPCERR = "FailedOperation.DCDatarepoRpcErr"
+//  FAILEDOPERATION_DCDATASETEXCEEDLIMIT = "FailedOperation.DCDatasetExceedLimit"
+//  FAILEDOPERATION_DCDATASETSTATUSNOTREADY = "FailedOperation.DCDatasetStatusNotReady"
+//  FAILEDOPERATION_DCGETUSERTEMPORARYSECRETERR = "FailedOperation.DCGetUserTemporarySecretErr"
+//  FAILEDOPERATION_DCMARSHALDATAERR = "FailedOperation.DCMarshalDataErr"
+//  FAILEDOPERATION_DCQUERYDATASETCONTENTERR = "FailedOperation.DCQueryDatasetContentErr"
+//  FAILEDOPERATION_DCUNMARSHALDATAERR = "FailedOperation.DCUnmarshalDataErr"
+//  FAILEDOPERATION_DCUNSUPPORTEDOPERATION = "FailedOperation.DCUnsupportedOperation"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_EXECTAGFAIL = "FailedOperation.ExecTagFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  INVALIDPARAMETERVALUE = "InvalidParameterValue"
+//  INVALIDPARAMETERVALUE_DCANNOTATIONTYPE = "InvalidParameterValue.DCAnnotationType"
+//  INVALIDPARAMETERVALUE_DCCOSPATHINFO = "InvalidParameterValue.DCCosPathInfo"
+//  INVALIDPARAMETERVALUE_DCDATASETANNOTATIONNOTMATCH = "InvalidParameterValue.DCDatasetAnnotationNotMatch"
+//  INVALIDPARAMETERVALUE_DCDATASETIDNOTEXIST = "InvalidParameterValue.DCDatasetIdNotExist"
+//  INVALIDPARAMETERVALUE_DCDATASETNAMEEXIST = "InvalidParameterValue.DCDatasetNameExist"
+//  INVALIDPARAMETERVALUE_DCDATASETTYPE = "InvalidParameterValue.DCDatasetType"
+//  INVALIDPARAMETERVALUE_DCFILTERVALUES = "InvalidParameterValue.DCFilterValues"
+//  MISSINGPARAMETER = "MissingParameter"
+func (c *Client) DescribeDatasets(request *DescribeDatasetsRequest) (response *DescribeDatasetsResponse, err error) {
+    return c.DescribeDatasetsWithContext(context.Background(), request)
+}
+
+// DescribeDatasets
+// 查询数据集列表
+//
+// 可能返回的错误码:
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  AUTHFAILURE_UNAUTHORIZEDOPERATION = "AuthFailure.UnauthorizedOperation"
+//  FAILEDOPERATION_DCCOSCLIENTERR = "FailedOperation.DCCosClientErr"
+//  FAILEDOPERATION_DCCREATEASYNCTASKERROR = "FailedOperation.DCCreateAsyncTaskError"
+//  FAILEDOPERATION_DCCREATEUSERCOSCLIENTERR = "FailedOperation.DCCreateUserCosClientErr"
+//  FAILEDOPERATION_DCDATAANNOTATIONRPCERR = "FailedOperation.DCDataAnnotationRpcErr"
+//  FAILEDOPERATION_DCDATAREPORPCERR = "FailedOperation.DCDatarepoRpcErr"
+//  FAILEDOPERATION_DCDATASETEXCEEDLIMIT = "FailedOperation.DCDatasetExceedLimit"
+//  FAILEDOPERATION_DCDATASETSTATUSNOTREADY = "FailedOperation.DCDatasetStatusNotReady"
+//  FAILEDOPERATION_DCGETUSERTEMPORARYSECRETERR = "FailedOperation.DCGetUserTemporarySecretErr"
+//  FAILEDOPERATION_DCMARSHALDATAERR = "FailedOperation.DCMarshalDataErr"
+//  FAILEDOPERATION_DCQUERYDATASETCONTENTERR = "FailedOperation.DCQueryDatasetContentErr"
+//  FAILEDOPERATION_DCUNMARSHALDATAERR = "FailedOperation.DCUnmarshalDataErr"
+//  FAILEDOPERATION_DCUNSUPPORTEDOPERATION = "FailedOperation.DCUnsupportedOperation"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_EXECTAGFAIL = "FailedOperation.ExecTagFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  INVALIDPARAMETERVALUE = "InvalidParameterValue"
+//  INVALIDPARAMETERVALUE_DCANNOTATIONTYPE = "InvalidParameterValue.DCAnnotationType"
+//  INVALIDPARAMETERVALUE_DCCOSPATHINFO = "InvalidParameterValue.DCCosPathInfo"
+//  INVALIDPARAMETERVALUE_DCDATASETANNOTATIONNOTMATCH = "InvalidParameterValue.DCDatasetAnnotationNotMatch"
+//  INVALIDPARAMETERVALUE_DCDATASETIDNOTEXIST = "InvalidParameterValue.DCDatasetIdNotExist"
+//  INVALIDPARAMETERVALUE_DCDATASETNAMEEXIST = "InvalidParameterValue.DCDatasetNameExist"
+//  INVALIDPARAMETERVALUE_DCDATASETTYPE = "InvalidParameterValue.DCDatasetType"
+//  INVALIDPARAMETERVALUE_DCFILTERVALUES = "InvalidParameterValue.DCFilterValues"
+//  MISSINGPARAMETER = "MissingParameter"
+func (c *Client) DescribeDatasetsWithContext(ctx context.Context, request *DescribeDatasetsRequest) (response *DescribeDatasetsResponse, err error) {
+    if request == nil {
+        request = NewDescribeDatasetsRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("DescribeDatasets require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewDescribeDatasetsResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewDescribeInferTemplatesRequest() (request *DescribeInferTemplatesRequest) {
+    request = &DescribeInferTemplatesRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "DescribeInferTemplates")
+    
+    
+    return
+}
+
+func NewDescribeInferTemplatesResponse() (response *DescribeInferTemplatesResponse) {
+    response = &DescribeInferTemplatesResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// DescribeInferTemplates
+// 查询推理镜像模板
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_APIGATEWAYQUERYFAILED = "FailedOperation.ApiGatewayQueryFailed"
+//  FAILEDOPERATION_BILLINGQUERYFAILED = "FailedOperation.BillingQueryFailed"
+//  FAILEDOPERATION_CLUSTERQUERYFAILED = "FailedOperation.ClusterQueryFailed"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  FAILEDOPERATION_STSQUERYFAILED = "FailedOperation.StsQueryFailed"
+//  FAILEDOPERATION_UNKNOWNINSTANCETYPE = "FailedOperation.UnknownInstanceType"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  MISSINGPARAMETER = "MissingParameter"
+//  OPERATIONDENIED = "OperationDenied"
+//  OPERATIONDENIED_BALANCEINSUFFICIENT = "OperationDenied.BalanceInsufficient"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+func (c *Client) DescribeInferTemplates(request *DescribeInferTemplatesRequest) (response *DescribeInferTemplatesResponse, err error) {
+    return c.DescribeInferTemplatesWithContext(context.Background(), request)
+}
+
+// DescribeInferTemplates
+// 查询推理镜像模板
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_APIGATEWAYQUERYFAILED = "FailedOperation.ApiGatewayQueryFailed"
+//  FAILEDOPERATION_BILLINGQUERYFAILED = "FailedOperation.BillingQueryFailed"
+//  FAILEDOPERATION_CLUSTERQUERYFAILED = "FailedOperation.ClusterQueryFailed"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  FAILEDOPERATION_STSQUERYFAILED = "FailedOperation.StsQueryFailed"
+//  FAILEDOPERATION_UNKNOWNINSTANCETYPE = "FailedOperation.UnknownInstanceType"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  MISSINGPARAMETER = "MissingParameter"
+//  OPERATIONDENIED = "OperationDenied"
+//  OPERATIONDENIED_BALANCEINSUFFICIENT = "OperationDenied.BalanceInsufficient"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+func (c *Client) DescribeInferTemplatesWithContext(ctx context.Context, request *DescribeInferTemplatesRequest) (response *DescribeInferTemplatesResponse, err error) {
+    if request == nil {
+        request = NewDescribeInferTemplatesRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("DescribeInferTemplates require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewDescribeInferTemplatesResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewDescribeModelAccelerateTaskRequest() (request *DescribeModelAccelerateTaskRequest) {
+    request = &DescribeModelAccelerateTaskRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "DescribeModelAccelerateTask")
+    
+    
+    return
+}
+
+func NewDescribeModelAccelerateTaskResponse() (response *DescribeModelAccelerateTaskResponse) {
+    response = &DescribeModelAccelerateTaskResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// DescribeModelAccelerateTask
+// 查询模型优化任务详情
+//
+// 可能返回的错误码:
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  AUTHFAILURE_UNAUTHORIZEDOPERATION = "AuthFailure.UnauthorizedOperation"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  FAILEDOPERATION_RECORDNOTFOUND = "FailedOperation.RecordNotFound"
+//  FAILEDOPERATION_UNMARSHALDATA = "FailedOperation.UnmarshalData"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  LIMITEXCEEDED = "LimitExceeded"
+//  MISSINGPARAMETER = "MissingParameter"
+func (c *Client) DescribeModelAccelerateTask(request *DescribeModelAccelerateTaskRequest) (response *DescribeModelAccelerateTaskResponse, err error) {
+    return c.DescribeModelAccelerateTaskWithContext(context.Background(), request)
+}
+
+// DescribeModelAccelerateTask
+// 查询模型优化任务详情
+//
+// 可能返回的错误码:
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  AUTHFAILURE_UNAUTHORIZEDOPERATION = "AuthFailure.UnauthorizedOperation"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  FAILEDOPERATION_RECORDNOTFOUND = "FailedOperation.RecordNotFound"
+//  FAILEDOPERATION_UNMARSHALDATA = "FailedOperation.UnmarshalData"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  LIMITEXCEEDED = "LimitExceeded"
+//  MISSINGPARAMETER = "MissingParameter"
+func (c *Client) DescribeModelAccelerateTaskWithContext(ctx context.Context, request *DescribeModelAccelerateTaskRequest) (response *DescribeModelAccelerateTaskResponse, err error) {
+    if request == nil {
+        request = NewDescribeModelAccelerateTaskRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("DescribeModelAccelerateTask require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewDescribeModelAccelerateTaskResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewDescribeModelAccelerateVersionsRequest() (request *DescribeModelAccelerateVersionsRequest) {
+    request = &DescribeModelAccelerateVersionsRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "DescribeModelAccelerateVersions")
+    
+    
+    return
+}
+
+func NewDescribeModelAccelerateVersionsResponse() (response *DescribeModelAccelerateVersionsResponse) {
+    response = &DescribeModelAccelerateVersionsResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// DescribeModelAccelerateVersions
+// 模型加速之后的模型版本列表
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  AUTHFAILURE_NOPERMISSION = "AuthFailure.NoPermission"
+//  AUTHFAILURE_UNAUTHORIZEDOPERATION = "AuthFailure.UnauthorizedOperation"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_CAMFAILURE = "FailedOperation.CAMFailure"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  FAILEDOPERATION_UNMARSHALDATA = "FailedOperation.UnmarshalData"
+//  LIMITEXCEEDED = "LimitExceeded"
+//  MISSINGPARAMETER = "MissingParameter"
+//  OPERATIONDENIED = "OperationDenied"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+func (c *Client) DescribeModelAccelerateVersions(request *DescribeModelAccelerateVersionsRequest) (response *DescribeModelAccelerateVersionsResponse, err error) {
+    return c.DescribeModelAccelerateVersionsWithContext(context.Background(), request)
+}
+
+// DescribeModelAccelerateVersions
+// 模型加速之后的模型版本列表
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  AUTHFAILURE_NOPERMISSION = "AuthFailure.NoPermission"
+//  AUTHFAILURE_UNAUTHORIZEDOPERATION = "AuthFailure.UnauthorizedOperation"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_CAMFAILURE = "FailedOperation.CAMFailure"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  FAILEDOPERATION_UNMARSHALDATA = "FailedOperation.UnmarshalData"
+//  LIMITEXCEEDED = "LimitExceeded"
+//  MISSINGPARAMETER = "MissingParameter"
+//  OPERATIONDENIED = "OperationDenied"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+func (c *Client) DescribeModelAccelerateVersionsWithContext(ctx context.Context, request *DescribeModelAccelerateVersionsRequest) (response *DescribeModelAccelerateVersionsResponse, err error) {
+    if request == nil {
+        request = NewDescribeModelAccelerateVersionsRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("DescribeModelAccelerateVersions require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewDescribeModelAccelerateVersionsResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewDescribeModelServiceRequest() (request *DescribeModelServiceRequest) {
+    request = &DescribeModelServiceRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "DescribeModelService")
+    
+    
+    return
+}
+
+func NewDescribeModelServiceResponse() (response *DescribeModelServiceResponse) {
+    response = &DescribeModelServiceResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// DescribeModelService
+// 查询单个服务
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_APIGATEWAYQUERYFAILED = "FailedOperation.ApiGatewayQueryFailed"
+//  FAILEDOPERATION_BILLINGQUERYFAILED = "FailedOperation.BillingQueryFailed"
+//  FAILEDOPERATION_CLSSERVICENOTACTIVED = "FailedOperation.ClsServiceNotActived"
+//  FAILEDOPERATION_CLUSTERQUERYFAILED = "FailedOperation.ClusterQueryFailed"
+//  FAILEDOPERATION_DUPLICATENAME = "FailedOperation.DuplicateName"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_INVALIDUSERTYPE = "FailedOperation.InvalidUserType"
+//  FAILEDOPERATION_KMSKEYNOTOPEN = "FailedOperation.KmsKeyNotOpen"
+//  FAILEDOPERATION_NOFREEBUCKET = "FailedOperation.NoFreeBucket"
+//  FAILEDOPERATION_NOPERMISSION = "FailedOperation.NoPermission"
+//  FAILEDOPERATION_NOTALLOW = "FailedOperation.NotAllow"
+//  FAILEDOPERATION_PROCESSING = "FailedOperation.Processing"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  FAILEDOPERATION_REPOBINDBYINSTANCE = "FailedOperation.RepoBindByInstance"
+//  FAILEDOPERATION_STSQUERYFAILED = "FailedOperation.StsQueryFailed"
+//  FAILEDOPERATION_TIMEDOUT = "FailedOperation.Timedout"
+//  FAILEDOPERATION_UNKNOWNINSTANCETYPE = "FailedOperation.UnknownInstanceType"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETERVALUE = "InvalidParameterValue"
+//  INVALIDPARAMETERVALUE_BADNAME = "InvalidParameterValue.BadName"
+//  INVALIDPARAMETERVALUE_CLSCONFIGREQUIRED = "InvalidParameterValue.ClsConfigRequired"
+//  INVALIDPARAMETERVALUE_CODEREPONOTFOUND = "InvalidParameterValue.CodeRepoNotFound"
+//  MISSINGPARAMETER = "MissingParameter"
+//  OPERATIONDENIED = "OperationDenied"
+//  OPERATIONDENIED_BALANCEINSUFFICIENT = "OperationDenied.BalanceInsufficient"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+func (c *Client) DescribeModelService(request *DescribeModelServiceRequest) (response *DescribeModelServiceResponse, err error) {
+    return c.DescribeModelServiceWithContext(context.Background(), request)
+}
+
+// DescribeModelService
+// 查询单个服务
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_APIGATEWAYQUERYFAILED = "FailedOperation.ApiGatewayQueryFailed"
+//  FAILEDOPERATION_BILLINGQUERYFAILED = "FailedOperation.BillingQueryFailed"
+//  FAILEDOPERATION_CLSSERVICENOTACTIVED = "FailedOperation.ClsServiceNotActived"
+//  FAILEDOPERATION_CLUSTERQUERYFAILED = "FailedOperation.ClusterQueryFailed"
+//  FAILEDOPERATION_DUPLICATENAME = "FailedOperation.DuplicateName"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_INVALIDUSERTYPE = "FailedOperation.InvalidUserType"
+//  FAILEDOPERATION_KMSKEYNOTOPEN = "FailedOperation.KmsKeyNotOpen"
+//  FAILEDOPERATION_NOFREEBUCKET = "FailedOperation.NoFreeBucket"
+//  FAILEDOPERATION_NOPERMISSION = "FailedOperation.NoPermission"
+//  FAILEDOPERATION_NOTALLOW = "FailedOperation.NotAllow"
+//  FAILEDOPERATION_PROCESSING = "FailedOperation.Processing"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  FAILEDOPERATION_REPOBINDBYINSTANCE = "FailedOperation.RepoBindByInstance"
+//  FAILEDOPERATION_STSQUERYFAILED = "FailedOperation.StsQueryFailed"
+//  FAILEDOPERATION_TIMEDOUT = "FailedOperation.Timedout"
+//  FAILEDOPERATION_UNKNOWNINSTANCETYPE = "FailedOperation.UnknownInstanceType"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETERVALUE = "InvalidParameterValue"
+//  INVALIDPARAMETERVALUE_BADNAME = "InvalidParameterValue.BadName"
+//  INVALIDPARAMETERVALUE_CLSCONFIGREQUIRED = "InvalidParameterValue.ClsConfigRequired"
+//  INVALIDPARAMETERVALUE_CODEREPONOTFOUND = "InvalidParameterValue.CodeRepoNotFound"
+//  MISSINGPARAMETER = "MissingParameter"
+//  OPERATIONDENIED = "OperationDenied"
+//  OPERATIONDENIED_BALANCEINSUFFICIENT = "OperationDenied.BalanceInsufficient"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+func (c *Client) DescribeModelServiceWithContext(ctx context.Context, request *DescribeModelServiceRequest) (response *DescribeModelServiceResponse, err error) {
+    if request == nil {
+        request = NewDescribeModelServiceRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("DescribeModelService require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewDescribeModelServiceResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewDescribeModelServiceCallInfoRequest() (request *DescribeModelServiceCallInfoRequest) {
+    request = &DescribeModelServiceCallInfoRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "DescribeModelServiceCallInfo")
+    
+    
+    return
+}
+
+func NewDescribeModelServiceCallInfoResponse() (response *DescribeModelServiceCallInfoResponse) {
+    response = &DescribeModelServiceCallInfoResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// DescribeModelServiceCallInfo
+// 展示服务的调用信息
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_APIGATEWAYQUERYFAILED = "FailedOperation.ApiGatewayQueryFailed"
+//  FAILEDOPERATION_BILLINGQUERYFAILED = "FailedOperation.BillingQueryFailed"
+//  FAILEDOPERATION_CLSSERVICENOTACTIVED = "FailedOperation.ClsServiceNotActived"
+//  FAILEDOPERATION_CLUSTERQUERYFAILED = "FailedOperation.ClusterQueryFailed"
+//  FAILEDOPERATION_DUPLICATENAME = "FailedOperation.DuplicateName"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_INVALIDUSERTYPE = "FailedOperation.InvalidUserType"
+//  FAILEDOPERATION_KMSKEYNOTOPEN = "FailedOperation.KmsKeyNotOpen"
+//  FAILEDOPERATION_NOFREEBUCKET = "FailedOperation.NoFreeBucket"
+//  FAILEDOPERATION_NOPERMISSION = "FailedOperation.NoPermission"
+//  FAILEDOPERATION_NOTALLOW = "FailedOperation.NotAllow"
+//  FAILEDOPERATION_PROCESSING = "FailedOperation.Processing"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  FAILEDOPERATION_REPOBINDBYINSTANCE = "FailedOperation.RepoBindByInstance"
+//  FAILEDOPERATION_STSQUERYFAILED = "FailedOperation.StsQueryFailed"
+//  FAILEDOPERATION_TIMEDOUT = "FailedOperation.Timedout"
+//  FAILEDOPERATION_UNKNOWNINSTANCETYPE = "FailedOperation.UnknownInstanceType"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  MISSINGPARAMETER = "MissingParameter"
+//  OPERATIONDENIED = "OperationDenied"
+//  OPERATIONDENIED_BALANCEINSUFFICIENT = "OperationDenied.BalanceInsufficient"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+func (c *Client) DescribeModelServiceCallInfo(request *DescribeModelServiceCallInfoRequest) (response *DescribeModelServiceCallInfoResponse, err error) {
+    return c.DescribeModelServiceCallInfoWithContext(context.Background(), request)
+}
+
+// DescribeModelServiceCallInfo
+// 展示服务的调用信息
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_APIGATEWAYQUERYFAILED = "FailedOperation.ApiGatewayQueryFailed"
+//  FAILEDOPERATION_BILLINGQUERYFAILED = "FailedOperation.BillingQueryFailed"
+//  FAILEDOPERATION_CLSSERVICENOTACTIVED = "FailedOperation.ClsServiceNotActived"
+//  FAILEDOPERATION_CLUSTERQUERYFAILED = "FailedOperation.ClusterQueryFailed"
+//  FAILEDOPERATION_DUPLICATENAME = "FailedOperation.DuplicateName"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_INVALIDUSERTYPE = "FailedOperation.InvalidUserType"
+//  FAILEDOPERATION_KMSKEYNOTOPEN = "FailedOperation.KmsKeyNotOpen"
+//  FAILEDOPERATION_NOFREEBUCKET = "FailedOperation.NoFreeBucket"
+//  FAILEDOPERATION_NOPERMISSION = "FailedOperation.NoPermission"
+//  FAILEDOPERATION_NOTALLOW = "FailedOperation.NotAllow"
+//  FAILEDOPERATION_PROCESSING = "FailedOperation.Processing"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  FAILEDOPERATION_REPOBINDBYINSTANCE = "FailedOperation.RepoBindByInstance"
+//  FAILEDOPERATION_STSQUERYFAILED = "FailedOperation.StsQueryFailed"
+//  FAILEDOPERATION_TIMEDOUT = "FailedOperation.Timedout"
+//  FAILEDOPERATION_UNKNOWNINSTANCETYPE = "FailedOperation.UnknownInstanceType"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  MISSINGPARAMETER = "MissingParameter"
+//  OPERATIONDENIED = "OperationDenied"
+//  OPERATIONDENIED_BALANCEINSUFFICIENT = "OperationDenied.BalanceInsufficient"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+func (c *Client) DescribeModelServiceCallInfoWithContext(ctx context.Context, request *DescribeModelServiceCallInfoRequest) (response *DescribeModelServiceCallInfoResponse, err error) {
+    if request == nil {
+        request = NewDescribeModelServiceCallInfoRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("DescribeModelServiceCallInfo require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewDescribeModelServiceCallInfoResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewDescribeModelServiceGroupRequest() (request *DescribeModelServiceGroupRequest) {
+    request = &DescribeModelServiceGroupRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "DescribeModelServiceGroup")
+    
+    
+    return
+}
+
+func NewDescribeModelServiceGroupResponse() (response *DescribeModelServiceGroupResponse) {
+    response = &DescribeModelServiceGroupResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// DescribeModelServiceGroup
+// 查询单个服务组
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_APIGATEWAYQUERYFAILED = "FailedOperation.ApiGatewayQueryFailed"
+//  FAILEDOPERATION_BILLINGQUERYFAILED = "FailedOperation.BillingQueryFailed"
+//  FAILEDOPERATION_CLUSTERQUERYFAILED = "FailedOperation.ClusterQueryFailed"
+//  FAILEDOPERATION_DUPLICATENAME = "FailedOperation.DuplicateName"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  FAILEDOPERATION_STSQUERYFAILED = "FailedOperation.StsQueryFailed"
+//  FAILEDOPERATION_UNKNOWNINSTANCETYPE = "FailedOperation.UnknownInstanceType"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETERVALUE = "InvalidParameterValue"
+//  MISSINGPARAMETER = "MissingParameter"
+//  OPERATIONDENIED = "OperationDenied"
+//  OPERATIONDENIED_BALANCEINSUFFICIENT = "OperationDenied.BalanceInsufficient"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+func (c *Client) DescribeModelServiceGroup(request *DescribeModelServiceGroupRequest) (response *DescribeModelServiceGroupResponse, err error) {
+    return c.DescribeModelServiceGroupWithContext(context.Background(), request)
+}
+
+// DescribeModelServiceGroup
+// 查询单个服务组
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_APIGATEWAYQUERYFAILED = "FailedOperation.ApiGatewayQueryFailed"
+//  FAILEDOPERATION_BILLINGQUERYFAILED = "FailedOperation.BillingQueryFailed"
+//  FAILEDOPERATION_CLUSTERQUERYFAILED = "FailedOperation.ClusterQueryFailed"
+//  FAILEDOPERATION_DUPLICATENAME = "FailedOperation.DuplicateName"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  FAILEDOPERATION_STSQUERYFAILED = "FailedOperation.StsQueryFailed"
+//  FAILEDOPERATION_UNKNOWNINSTANCETYPE = "FailedOperation.UnknownInstanceType"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETERVALUE = "InvalidParameterValue"
+//  MISSINGPARAMETER = "MissingParameter"
+//  OPERATIONDENIED = "OperationDenied"
+//  OPERATIONDENIED_BALANCEINSUFFICIENT = "OperationDenied.BalanceInsufficient"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+func (c *Client) DescribeModelServiceGroupWithContext(ctx context.Context, request *DescribeModelServiceGroupRequest) (response *DescribeModelServiceGroupResponse, err error) {
+    if request == nil {
+        request = NewDescribeModelServiceGroupRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("DescribeModelServiceGroup require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewDescribeModelServiceGroupResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewDescribeModelServiceGroupsRequest() (request *DescribeModelServiceGroupsRequest) {
+    request = &DescribeModelServiceGroupsRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "DescribeModelServiceGroups")
+    
+    
+    return
+}
+
+func NewDescribeModelServiceGroupsResponse() (response *DescribeModelServiceGroupsResponse) {
+    response = &DescribeModelServiceGroupsResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// DescribeModelServiceGroups
+// 列举在线推理服务组
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  AUTHFAILURE_UNAUTHORIZEDOPERATION = "AuthFailure.UnauthorizedOperation"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_APIGATEWAYQUERYFAILED = "FailedOperation.ApiGatewayQueryFailed"
+//  FAILEDOPERATION_BILLINGQUERYFAILED = "FailedOperation.BillingQueryFailed"
+//  FAILEDOPERATION_CLUSTERQUERYFAILED = "FailedOperation.ClusterQueryFailed"
+//  FAILEDOPERATION_DUPLICATENAME = "FailedOperation.DuplicateName"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_EXECTAGFAIL = "FailedOperation.ExecTagFail"
+//  FAILEDOPERATION_NOPERMISSION = "FailedOperation.NoPermission"
+//  FAILEDOPERATION_NOTALLOW = "FailedOperation.NotAllow"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  FAILEDOPERATION_QUERYTAGFAIL = "FailedOperation.QueryTagFail"
+//  FAILEDOPERATION_STSQUERYFAILED = "FailedOperation.StsQueryFailed"
+//  FAILEDOPERATION_UNKNOWNINSTANCETYPE = "FailedOperation.UnknownInstanceType"
+//  FAILEDOPERATION_UNMARSHALDATA = "FailedOperation.UnmarshalData"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETERVALUE = "InvalidParameterValue"
+//  INVALIDPARAMETERVALUE_BADNAME = "InvalidParameterValue.BadName"
+//  MISSINGPARAMETER = "MissingParameter"
+//  OPERATIONDENIED = "OperationDenied"
+//  OPERATIONDENIED_BALANCEINSUFFICIENT = "OperationDenied.BalanceInsufficient"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+func (c *Client) DescribeModelServiceGroups(request *DescribeModelServiceGroupsRequest) (response *DescribeModelServiceGroupsResponse, err error) {
+    return c.DescribeModelServiceGroupsWithContext(context.Background(), request)
+}
+
+// DescribeModelServiceGroups
+// 列举在线推理服务组
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  AUTHFAILURE_UNAUTHORIZEDOPERATION = "AuthFailure.UnauthorizedOperation"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_APIGATEWAYQUERYFAILED = "FailedOperation.ApiGatewayQueryFailed"
+//  FAILEDOPERATION_BILLINGQUERYFAILED = "FailedOperation.BillingQueryFailed"
+//  FAILEDOPERATION_CLUSTERQUERYFAILED = "FailedOperation.ClusterQueryFailed"
+//  FAILEDOPERATION_DUPLICATENAME = "FailedOperation.DuplicateName"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_EXECTAGFAIL = "FailedOperation.ExecTagFail"
+//  FAILEDOPERATION_NOPERMISSION = "FailedOperation.NoPermission"
+//  FAILEDOPERATION_NOTALLOW = "FailedOperation.NotAllow"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  FAILEDOPERATION_QUERYTAGFAIL = "FailedOperation.QueryTagFail"
+//  FAILEDOPERATION_STSQUERYFAILED = "FailedOperation.StsQueryFailed"
+//  FAILEDOPERATION_UNKNOWNINSTANCETYPE = "FailedOperation.UnknownInstanceType"
+//  FAILEDOPERATION_UNMARSHALDATA = "FailedOperation.UnmarshalData"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETERVALUE = "InvalidParameterValue"
+//  INVALIDPARAMETERVALUE_BADNAME = "InvalidParameterValue.BadName"
+//  MISSINGPARAMETER = "MissingParameter"
+//  OPERATIONDENIED = "OperationDenied"
+//  OPERATIONDENIED_BALANCEINSUFFICIENT = "OperationDenied.BalanceInsufficient"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+func (c *Client) DescribeModelServiceGroupsWithContext(ctx context.Context, request *DescribeModelServiceGroupsRequest) (response *DescribeModelServiceGroupsResponse, err error) {
+    if request == nil {
+        request = NewDescribeModelServiceGroupsRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("DescribeModelServiceGroups require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewDescribeModelServiceGroupsResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewDescribeModelServiceHotUpdatedRequest() (request *DescribeModelServiceHotUpdatedRequest) {
+    request = &DescribeModelServiceHotUpdatedRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "DescribeModelServiceHotUpdated")
+    
+    
+    return
+}
+
+func NewDescribeModelServiceHotUpdatedResponse() (response *DescribeModelServiceHotUpdatedResponse) {
+    response = &DescribeModelServiceHotUpdatedResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// DescribeModelServiceHotUpdated
+// 用于查询模型服务能否开启热更新
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_APIGATEWAYQUERYFAILED = "FailedOperation.ApiGatewayQueryFailed"
+//  FAILEDOPERATION_BILLINGQUERYFAILED = "FailedOperation.BillingQueryFailed"
+//  FAILEDOPERATION_CLUSTERQUERYFAILED = "FailedOperation.ClusterQueryFailed"
+//  FAILEDOPERATION_DUPLICATENAME = "FailedOperation.DuplicateName"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_INSUFFICIENTWHITELISTQUOTA = "FailedOperation.InsufficientWhitelistQuota"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  FAILEDOPERATION_STSQUERYFAILED = "FailedOperation.StsQueryFailed"
+//  FAILEDOPERATION_UNKNOWNINSTANCETYPE = "FailedOperation.UnknownInstanceType"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  MISSINGPARAMETER = "MissingParameter"
+//  OPERATIONDENIED = "OperationDenied"
+//  OPERATIONDENIED_BALANCEINSUFFICIENT = "OperationDenied.BalanceInsufficient"
+//  RESOURCEINUSE = "ResourceInUse"
+//  RESOURCEINSUFFICIENT = "ResourceInsufficient"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+//  UNSUPPORTEDOPERATION = "UnsupportedOperation"
+func (c *Client) DescribeModelServiceHotUpdated(request *DescribeModelServiceHotUpdatedRequest) (response *DescribeModelServiceHotUpdatedResponse, err error) {
+    return c.DescribeModelServiceHotUpdatedWithContext(context.Background(), request)
+}
+
+// DescribeModelServiceHotUpdated
+// 用于查询模型服务能否开启热更新
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_APIGATEWAYQUERYFAILED = "FailedOperation.ApiGatewayQueryFailed"
+//  FAILEDOPERATION_BILLINGQUERYFAILED = "FailedOperation.BillingQueryFailed"
+//  FAILEDOPERATION_CLUSTERQUERYFAILED = "FailedOperation.ClusterQueryFailed"
+//  FAILEDOPERATION_DUPLICATENAME = "FailedOperation.DuplicateName"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_INSUFFICIENTWHITELISTQUOTA = "FailedOperation.InsufficientWhitelistQuota"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  FAILEDOPERATION_STSQUERYFAILED = "FailedOperation.StsQueryFailed"
+//  FAILEDOPERATION_UNKNOWNINSTANCETYPE = "FailedOperation.UnknownInstanceType"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  MISSINGPARAMETER = "MissingParameter"
+//  OPERATIONDENIED = "OperationDenied"
+//  OPERATIONDENIED_BALANCEINSUFFICIENT = "OperationDenied.BalanceInsufficient"
+//  RESOURCEINUSE = "ResourceInUse"
+//  RESOURCEINSUFFICIENT = "ResourceInsufficient"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+//  UNSUPPORTEDOPERATION = "UnsupportedOperation"
+func (c *Client) DescribeModelServiceHotUpdatedWithContext(ctx context.Context, request *DescribeModelServiceHotUpdatedRequest) (response *DescribeModelServiceHotUpdatedResponse, err error) {
+    if request == nil {
+        request = NewDescribeModelServiceHotUpdatedRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("DescribeModelServiceHotUpdated require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewDescribeModelServiceHotUpdatedResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewDescribeNotebookRequest() (request *DescribeNotebookRequest) {
+    request = &DescribeNotebookRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "DescribeNotebook")
+    
+    
+    return
+}
+
+func NewDescribeNotebookResponse() (response *DescribeNotebookResponse) {
+    response = &DescribeNotebookResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// DescribeNotebook
+// Notebook详情
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_QUERYBINDINGTAGSFAILED = "FailedOperation.QueryBindingTagsFailed"
+//  FAILEDOPERATION_QUERYPRICEFAILED = "FailedOperation.QueryPriceFailed"
+//  FAILEDOPERATION_QUERYRESOURCEGROUPNAMESFAILED = "FailedOperation.QueryResourceGroupNamesFailed"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  UNAUTHORIZEDOPERATION = "UnauthorizedOperation"
+//  UNAUTHORIZEDOPERATION_NOPERMISSION = "UnauthorizedOperation.NoPermission"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+func (c *Client) DescribeNotebook(request *DescribeNotebookRequest) (response *DescribeNotebookResponse, err error) {
+    return c.DescribeNotebookWithContext(context.Background(), request)
+}
+
+// DescribeNotebook
+// Notebook详情
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_QUERYBINDINGTAGSFAILED = "FailedOperation.QueryBindingTagsFailed"
+//  FAILEDOPERATION_QUERYPRICEFAILED = "FailedOperation.QueryPriceFailed"
+//  FAILEDOPERATION_QUERYRESOURCEGROUPNAMESFAILED = "FailedOperation.QueryResourceGroupNamesFailed"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  UNAUTHORIZEDOPERATION = "UnauthorizedOperation"
+//  UNAUTHORIZEDOPERATION_NOPERMISSION = "UnauthorizedOperation.NoPermission"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+func (c *Client) DescribeNotebookWithContext(ctx context.Context, request *DescribeNotebookRequest) (response *DescribeNotebookResponse, err error) {
+    if request == nil {
+        request = NewDescribeNotebookRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("DescribeNotebook require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewDescribeNotebookResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewDescribeNotebooksRequest() (request *DescribeNotebooksRequest) {
+    request = &DescribeNotebooksRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "DescribeNotebooks")
+    
+    
+    return
+}
+
+func NewDescribeNotebooksResponse() (response *DescribeNotebooksResponse) {
+    response = &DescribeNotebooksResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// DescribeNotebooks
+// Notebook列表
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  FAILEDOPERATION_CHECKBILLINGWHITELISTFAILED = "FailedOperation.CheckBillingWhiteListFailed"
+//  FAILEDOPERATION_QUERYPRICEFAILED = "FailedOperation.QueryPriceFailed"
+//  FAILEDOPERATION_QUERYRESOURCEGROUPNAMESFAILED = "FailedOperation.QueryResourceGroupNamesFailed"
+//  FAILEDOPERATION_QUERYRESOURCESPECFAILED = "FailedOperation.QueryResourceSpecFailed"
+//  INTERNALERROR = "InternalError"
+//  INTERNALERROR_QUERYBINDINGTAGSFAILED = "InternalError.QueryBindingTagsFailed"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETER_FILTERKEYSTATUSCONFLICTWITHCHARGESTATUS = "InvalidParameter.FilterKeyStatusConflictWithChargeStatus"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+func (c *Client) DescribeNotebooks(request *DescribeNotebooksRequest) (response *DescribeNotebooksResponse, err error) {
+    return c.DescribeNotebooksWithContext(context.Background(), request)
+}
+
+// DescribeNotebooks
+// Notebook列表
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  FAILEDOPERATION_CHECKBILLINGWHITELISTFAILED = "FailedOperation.CheckBillingWhiteListFailed"
+//  FAILEDOPERATION_QUERYPRICEFAILED = "FailedOperation.QueryPriceFailed"
+//  FAILEDOPERATION_QUERYRESOURCEGROUPNAMESFAILED = "FailedOperation.QueryResourceGroupNamesFailed"
+//  FAILEDOPERATION_QUERYRESOURCESPECFAILED = "FailedOperation.QueryResourceSpecFailed"
+//  INTERNALERROR = "InternalError"
+//  INTERNALERROR_QUERYBINDINGTAGSFAILED = "InternalError.QueryBindingTagsFailed"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETER_FILTERKEYSTATUSCONFLICTWITHCHARGESTATUS = "InvalidParameter.FilterKeyStatusConflictWithChargeStatus"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+func (c *Client) DescribeNotebooksWithContext(ctx context.Context, request *DescribeNotebooksRequest) (response *DescribeNotebooksResponse, err error) {
+    if request == nil {
+        request = NewDescribeNotebooksRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("DescribeNotebooks require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewDescribeNotebooksResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewDescribeTrainingModelVersionRequest() (request *DescribeTrainingModelVersionRequest) {
+    request = &DescribeTrainingModelVersionRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "DescribeTrainingModelVersion")
+    
+    
+    return
+}
+
+func NewDescribeTrainingModelVersionResponse() (response *DescribeTrainingModelVersionResponse) {
+    response = &DescribeTrainingModelVersionResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// DescribeTrainingModelVersion
+// 查询模型版本
+//
+// 可能返回的错误码:
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  AUTHFAILURE_UNAUTHORIZEDOPERATION = "AuthFailure.UnauthorizedOperation"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  MISSINGPARAMETER = "MissingParameter"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+func (c *Client) DescribeTrainingModelVersion(request *DescribeTrainingModelVersionRequest) (response *DescribeTrainingModelVersionResponse, err error) {
+    return c.DescribeTrainingModelVersionWithContext(context.Background(), request)
+}
+
+// DescribeTrainingModelVersion
+// 查询模型版本
+//
+// 可能返回的错误码:
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  AUTHFAILURE_UNAUTHORIZEDOPERATION = "AuthFailure.UnauthorizedOperation"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  MISSINGPARAMETER = "MissingParameter"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+func (c *Client) DescribeTrainingModelVersionWithContext(ctx context.Context, request *DescribeTrainingModelVersionRequest) (response *DescribeTrainingModelVersionResponse, err error) {
+    if request == nil {
+        request = NewDescribeTrainingModelVersionRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("DescribeTrainingModelVersion require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewDescribeTrainingModelVersionResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewDescribeTrainingModelVersionsRequest() (request *DescribeTrainingModelVersionsRequest) {
+    request = &DescribeTrainingModelVersionsRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "DescribeTrainingModelVersions")
+    
+    
+    return
+}
+
+func NewDescribeTrainingModelVersionsResponse() (response *DescribeTrainingModelVersionsResponse) {
+    response = &DescribeTrainingModelVersionsResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// DescribeTrainingModelVersions
+// 模型版本列表
+//
+// 可能返回的错误码:
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  AUTHFAILURE_UNAUTHORIZEDOPERATION = "AuthFailure.UnauthorizedOperation"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETERVALUE = "InvalidParameterValue"
+//  MISSINGPARAMETER = "MissingParameter"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  RESOURCENOTFOUND_NOMODEL = "ResourceNotFound.NoModel"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+func (c *Client) DescribeTrainingModelVersions(request *DescribeTrainingModelVersionsRequest) (response *DescribeTrainingModelVersionsResponse, err error) {
+    return c.DescribeTrainingModelVersionsWithContext(context.Background(), request)
+}
+
+// DescribeTrainingModelVersions
+// 模型版本列表
+//
+// 可能返回的错误码:
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  AUTHFAILURE_UNAUTHORIZEDOPERATION = "AuthFailure.UnauthorizedOperation"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETERVALUE = "InvalidParameterValue"
+//  MISSINGPARAMETER = "MissingParameter"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  RESOURCENOTFOUND_NOMODEL = "ResourceNotFound.NoModel"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+func (c *Client) DescribeTrainingModelVersionsWithContext(ctx context.Context, request *DescribeTrainingModelVersionsRequest) (response *DescribeTrainingModelVersionsResponse, err error) {
+    if request == nil {
+        request = NewDescribeTrainingModelVersionsRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("DescribeTrainingModelVersions require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewDescribeTrainingModelVersionsResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewDescribeTrainingTaskRequest() (request *DescribeTrainingTaskRequest) {
+    request = &DescribeTrainingTaskRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "DescribeTrainingTask")
+    
+    
+    return
+}
+
+func NewDescribeTrainingTaskResponse() (response *DescribeTrainingTaskResponse) {
+    response = &DescribeTrainingTaskResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// DescribeTrainingTask
+// 训练任务详情
+//
+// 可能返回的错误码:
+//  FAILEDOPERATION_QUERYRESOURCEGROUPNAMESFAILED = "FailedOperation.QueryResourceGroupNamesFailed"
+//  INTERNALERROR_NOPERMISSION = "InternalError.NoPermission"
+//  INTERNALERROR_QUERYBINDINGTAGSFAILED = "InternalError.QueryBindingTagsFailed"
+//  INTERNALERROR_QUERYRESOURCEGROUPNAMESFAILED = "InternalError.QueryResourceGroupNamesFailed"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+func (c *Client) DescribeTrainingTask(request *DescribeTrainingTaskRequest) (response *DescribeTrainingTaskResponse, err error) {
+    return c.DescribeTrainingTaskWithContext(context.Background(), request)
+}
+
+// DescribeTrainingTask
+// 训练任务详情
+//
+// 可能返回的错误码:
+//  FAILEDOPERATION_QUERYRESOURCEGROUPNAMESFAILED = "FailedOperation.QueryResourceGroupNamesFailed"
+//  INTERNALERROR_NOPERMISSION = "InternalError.NoPermission"
+//  INTERNALERROR_QUERYBINDINGTAGSFAILED = "InternalError.QueryBindingTagsFailed"
+//  INTERNALERROR_QUERYRESOURCEGROUPNAMESFAILED = "InternalError.QueryResourceGroupNamesFailed"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+func (c *Client) DescribeTrainingTaskWithContext(ctx context.Context, request *DescribeTrainingTaskRequest) (response *DescribeTrainingTaskResponse, err error) {
+    if request == nil {
+        request = NewDescribeTrainingTaskRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("DescribeTrainingTask require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewDescribeTrainingTaskResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewDescribeTrainingTaskPodsRequest() (request *DescribeTrainingTaskPodsRequest) {
+    request = &DescribeTrainingTaskPodsRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "DescribeTrainingTaskPods")
+    
+    
+    return
+}
+
+func NewDescribeTrainingTaskPodsResponse() (response *DescribeTrainingTaskPodsResponse) {
+    response = &DescribeTrainingTaskPodsResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// DescribeTrainingTaskPods
+// 训练任务pod列表
+//
+// 可能返回的错误码:
+//  FAILEDOPERATION_QUERYRESOURCEGROUPNAMESFAILED = "FailedOperation.QueryResourceGroupNamesFailed"
+//  INTERNALERROR = "InternalError"
+//  INTERNALERROR_NOPERMISSION = "InternalError.NoPermission"
+//  INTERNALERROR_QUERYRESOURCEGROUPNAMESFAILED = "InternalError.QueryResourceGroupNamesFailed"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+func (c *Client) DescribeTrainingTaskPods(request *DescribeTrainingTaskPodsRequest) (response *DescribeTrainingTaskPodsResponse, err error) {
+    return c.DescribeTrainingTaskPodsWithContext(context.Background(), request)
+}
+
+// DescribeTrainingTaskPods
+// 训练任务pod列表
+//
+// 可能返回的错误码:
+//  FAILEDOPERATION_QUERYRESOURCEGROUPNAMESFAILED = "FailedOperation.QueryResourceGroupNamesFailed"
+//  INTERNALERROR = "InternalError"
+//  INTERNALERROR_NOPERMISSION = "InternalError.NoPermission"
+//  INTERNALERROR_QUERYRESOURCEGROUPNAMESFAILED = "InternalError.QueryResourceGroupNamesFailed"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+func (c *Client) DescribeTrainingTaskPodsWithContext(ctx context.Context, request *DescribeTrainingTaskPodsRequest) (response *DescribeTrainingTaskPodsResponse, err error) {
+    if request == nil {
+        request = NewDescribeTrainingTaskPodsRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("DescribeTrainingTaskPods require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewDescribeTrainingTaskPodsResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewDescribeTrainingTasksRequest() (request *DescribeTrainingTasksRequest) {
+    request = &DescribeTrainingTasksRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "DescribeTrainingTasks")
+    
+    
+    return
+}
+
+func NewDescribeTrainingTasksResponse() (response *DescribeTrainingTasksResponse) {
+    response = &DescribeTrainingTasksResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// DescribeTrainingTasks
+// 训练任务列表
+//
+// 可能返回的错误码:
+//  FAILEDOPERATION_QUERYRESOURCESPECFAILED = "FailedOperation.QueryResourceSpecFailed"
+//  INTERNALERROR = "InternalError"
+//  INTERNALERROR_QUERYBINDINGTAGSFAILED = "InternalError.QueryBindingTagsFailed"
+//  INTERNALERROR_QUERYPRICEFAILED = "InternalError.QueryPriceFailed"
+//  INTERNALERROR_QUERYRESOURCEGROUPNAMESFAILED = "InternalError.QueryResourceGroupNamesFailed"
+//  INTERNALERROR_QUERYRESOURCESPECFAILED = "InternalError.QueryResourceSpecFailed"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETERVALUE_FRAMEWORKVERSIONNOTSUPPORT = "InvalidParameterValue.FrameworkVersionNotSupport"
+//  INVALIDPARAMETERVALUE_PAGELIMITEXCEEDED = "InvalidParameterValue.PageLimitExceeded"
+//  UNSUPPORTEDOPERATION = "UnsupportedOperation"
+func (c *Client) DescribeTrainingTasks(request *DescribeTrainingTasksRequest) (response *DescribeTrainingTasksResponse, err error) {
+    return c.DescribeTrainingTasksWithContext(context.Background(), request)
+}
+
+// DescribeTrainingTasks
+// 训练任务列表
+//
+// 可能返回的错误码:
+//  FAILEDOPERATION_QUERYRESOURCESPECFAILED = "FailedOperation.QueryResourceSpecFailed"
+//  INTERNALERROR = "InternalError"
+//  INTERNALERROR_QUERYBINDINGTAGSFAILED = "InternalError.QueryBindingTagsFailed"
+//  INTERNALERROR_QUERYPRICEFAILED = "InternalError.QueryPriceFailed"
+//  INTERNALERROR_QUERYRESOURCEGROUPNAMESFAILED = "InternalError.QueryResourceGroupNamesFailed"
+//  INTERNALERROR_QUERYRESOURCESPECFAILED = "InternalError.QueryResourceSpecFailed"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETERVALUE_FRAMEWORKVERSIONNOTSUPPORT = "InvalidParameterValue.FrameworkVersionNotSupport"
+//  INVALIDPARAMETERVALUE_PAGELIMITEXCEEDED = "InvalidParameterValue.PageLimitExceeded"
+//  UNSUPPORTEDOPERATION = "UnsupportedOperation"
+func (c *Client) DescribeTrainingTasksWithContext(ctx context.Context, request *DescribeTrainingTasksRequest) (response *DescribeTrainingTasksResponse, err error) {
+    if request == nil {
+        request = NewDescribeTrainingTasksRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("DescribeTrainingTasks require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewDescribeTrainingTasksResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewModifyModelServiceRequest() (request *ModifyModelServiceRequest) {
+    request = &ModifyModelServiceRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "ModifyModelService")
+    
+    
+    return
+}
+
+func NewModifyModelServiceResponse() (response *ModifyModelServiceResponse) {
+    response = &ModifyModelServiceResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// ModifyModelService
+// 用于更新模型服务
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  AUTHFAILURE_UNAUTHORIZEDOPERATION = "AuthFailure.UnauthorizedOperation"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_APIGATEWAYQUERYFAILED = "FailedOperation.ApiGatewayQueryFailed"
+//  FAILEDOPERATION_BILLINGQUERYFAILED = "FailedOperation.BillingQueryFailed"
+//  FAILEDOPERATION_CLUSTERQUERYFAILED = "FailedOperation.ClusterQueryFailed"
+//  FAILEDOPERATION_DUPLICATENAME = "FailedOperation.DuplicateName"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_EXECTAGFAIL = "FailedOperation.ExecTagFail"
+//  FAILEDOPERATION_INSUFFICIENTWHITELISTQUOTA = "FailedOperation.InsufficientWhitelistQuota"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  FAILEDOPERATION_QUERYTAGFAIL = "FailedOperation.QueryTagFail"
+//  FAILEDOPERATION_STSQUERYFAILED = "FailedOperation.StsQueryFailed"
+//  FAILEDOPERATION_UNKNOWNINSTANCETYPE = "FailedOperation.UnknownInstanceType"
+//  FAILEDOPERATION_UNMARSHALDATA = "FailedOperation.UnmarshalData"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETER_MODELFILEINVALID = "InvalidParameter.ModelFileInvalid"
+//  MISSINGPARAMETER = "MissingParameter"
+//  OPERATIONDENIED = "OperationDenied"
+//  OPERATIONDENIED_BALANCEINSUFFICIENT = "OperationDenied.BalanceInsufficient"
+//  RESOURCEINUSE = "ResourceInUse"
+//  RESOURCEINSUFFICIENT = "ResourceInsufficient"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+//  UNSUPPORTEDOPERATION = "UnsupportedOperation"
+func (c *Client) ModifyModelService(request *ModifyModelServiceRequest) (response *ModifyModelServiceResponse, err error) {
+    return c.ModifyModelServiceWithContext(context.Background(), request)
+}
+
+// ModifyModelService
+// 用于更新模型服务
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  AUTHFAILURE_UNAUTHORIZEDOPERATION = "AuthFailure.UnauthorizedOperation"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_APIGATEWAYQUERYFAILED = "FailedOperation.ApiGatewayQueryFailed"
+//  FAILEDOPERATION_BILLINGQUERYFAILED = "FailedOperation.BillingQueryFailed"
+//  FAILEDOPERATION_CLUSTERQUERYFAILED = "FailedOperation.ClusterQueryFailed"
+//  FAILEDOPERATION_DUPLICATENAME = "FailedOperation.DuplicateName"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_EXECTAGFAIL = "FailedOperation.ExecTagFail"
+//  FAILEDOPERATION_INSUFFICIENTWHITELISTQUOTA = "FailedOperation.InsufficientWhitelistQuota"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  FAILEDOPERATION_QUERYTAGFAIL = "FailedOperation.QueryTagFail"
+//  FAILEDOPERATION_STSQUERYFAILED = "FailedOperation.StsQueryFailed"
+//  FAILEDOPERATION_UNKNOWNINSTANCETYPE = "FailedOperation.UnknownInstanceType"
+//  FAILEDOPERATION_UNMARSHALDATA = "FailedOperation.UnmarshalData"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETER_MODELFILEINVALID = "InvalidParameter.ModelFileInvalid"
+//  MISSINGPARAMETER = "MissingParameter"
+//  OPERATIONDENIED = "OperationDenied"
+//  OPERATIONDENIED_BALANCEINSUFFICIENT = "OperationDenied.BalanceInsufficient"
+//  RESOURCEINUSE = "ResourceInUse"
+//  RESOURCEINSUFFICIENT = "ResourceInsufficient"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+//  UNSUPPORTEDOPERATION = "UnsupportedOperation"
+func (c *Client) ModifyModelServiceWithContext(ctx context.Context, request *ModifyModelServiceRequest) (response *ModifyModelServiceResponse, err error) {
+    if request == nil {
+        request = NewModifyModelServiceRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("ModifyModelService require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewModifyModelServiceResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewPushTrainingMetricsRequest() (request *PushTrainingMetricsRequest) {
+    request = &PushTrainingMetricsRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "PushTrainingMetrics")
+    
+    
+    return
+}
+
+func NewPushTrainingMetricsResponse() (response *PushTrainingMetricsResponse) {
+    response = &PushTrainingMetricsResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// PushTrainingMetrics
+// 上报训练自定义指标
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_CLSSERVICENOTACTIVED = "FailedOperation.ClsServiceNotActived"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  INVALIDPARAMETER = "InvalidParameter"
+func (c *Client) PushTrainingMetrics(request *PushTrainingMetricsRequest) (response *PushTrainingMetricsResponse, err error) {
+    return c.PushTrainingMetricsWithContext(context.Background(), request)
+}
+
+// PushTrainingMetrics
+// 上报训练自定义指标
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_CLSSERVICENOTACTIVED = "FailedOperation.ClsServiceNotActived"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  INVALIDPARAMETER = "InvalidParameter"
+func (c *Client) PushTrainingMetricsWithContext(ctx context.Context, request *PushTrainingMetricsRequest) (response *PushTrainingMetricsResponse, err error) {
+    if request == nil {
+        request = NewPushTrainingMetricsRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("PushTrainingMetrics require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewPushTrainingMetricsResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewSendChatMessageRequest() (request *SendChatMessageRequest) {
+    request = &SendChatMessageRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "SendChatMessage")
+    
+    
+    return
+}
+
+func NewSendChatMessageResponse() (response *SendChatMessageResponse) {
+    response = &SendChatMessageResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// SendChatMessage
+// 这是一个供您体验大模型聊天的接口。
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  FAILEDOPERATION = "FailedOperation"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETER_MODELISOFFLINE = "InvalidParameter.ModelIsOffline"
+func (c *Client) SendChatMessage(request *SendChatMessageRequest) (response *SendChatMessageResponse, err error) {
+    return c.SendChatMessageWithContext(context.Background(), request)
+}
+
+// SendChatMessage
+// 这是一个供您体验大模型聊天的接口。
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  FAILEDOPERATION = "FailedOperation"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETER_MODELISOFFLINE = "InvalidParameter.ModelIsOffline"
+func (c *Client) SendChatMessageWithContext(ctx context.Context, request *SendChatMessageRequest) (response *SendChatMessageResponse, err error) {
+    if request == nil {
+        request = NewSendChatMessageRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("SendChatMessage require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewSendChatMessageResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewStartNotebookRequest() (request *StartNotebookRequest) {
+    request = &StartNotebookRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "StartNotebook")
+    
+    
+    return
+}
+
+func NewStartNotebookResponse() (response *StartNotebookResponse) {
+    response = &StartNotebookResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// StartNotebook
+// 启动Notebook
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_MODIFYBILLINGINSTANCEBATCHFAILED = "FailedOperation.ModifyBillingInstanceBatchFailed"
+//  FAILEDOPERATION_NOTALLOW = "FailedOperation.NotAllow"
+//  FAILEDOPERATION_QUERYRESOURCESPECFAILED = "FailedOperation.QueryResourceSpecFailed"
+//  INTERNALERROR = "InternalError"
+//  INTERNALERROR_QUERYRESOURCEGROUPFAILED = "InternalError.QueryResourceGroupFailed"
+//  INTERNALERROR_QUERYSUBNETINFOFAILED = "InternalError.QuerySubnetInfoFailed"
+//  INTERNALERROR_QUERYUSERTMPCREDENTIALFAILED = "InternalError.QueryUserTMPCredentialFailed"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETER_UNSUPPORTEDMULTILOCALDISK = "InvalidParameter.UnsupportedMultiLocalDisk"
+//  INVALIDPARAMETERVALUE = "InvalidParameterValue"
+//  INVALIDPARAMETERVALUE_DATACONFIGNUMLIMITEXCEEDED = "InvalidParameterValue.DataConfigNumLimitExceeded"
+//  INVALIDPARAMETERVALUE_GETCFSMOUNTIPFAILED = "InvalidParameterValue.GetCFSMountIPFailed"
+//  INVALIDPARAMETERVALUE_NOTALLOWEDTOCREATEFREEVOLUMENOTEBOOKWITHBAREMETALRESOURCEGROUP = "InvalidParameterValue.NotAllowedToCreateFreeVolumeNotebookWithBareMetalResourceGroup"
+//  INVALIDPARAMETERVALUE_NOTALLOWEDTOCREATEFREEVOLUMENOTEBOOKWITHSWRESOURCEGROUP = "InvalidParameterValue.NotAllowedToCreateFreeVolumeNotebookWithSWResourceGroup"
+//  INVALIDPARAMETERVALUE_NOTALLOWEDTOCREATENOTEBOOKWITHBAREMETALRESOURCEGROUP = "InvalidParameterValue.NotAllowedToCreateNotebookWithBareMetalResourceGroup"
+//  INVALIDPARAMETERVALUE_PATHILLEGAL = "InvalidParameterValue.PathIllegal"
+//  INVALIDPARAMETERVALUE_UNSUPPORTEDMULTICBSSTORAGE = "InvalidParameterValue.UnsupportedMultiCBSStorage"
+//  OPERATIONDENIED = "OperationDenied"
+//  OPERATIONDENIED_BALANCEINSUFFICIENT = "OperationDenied.BalanceInsufficient"
+//  OPERATIONDENIED_BILLINGSTATUSRESOURCEINSUFFICIENT = "OperationDenied.BillingStatusResourceInsufficient"
+//  OPERATIONDENIED_IPILLEGAL = "OperationDenied.IpIllegal"
+//  OPERATIONDENIED_MIYINGBALANCEINSUFFICIENT = "OperationDenied.MIYINGBalanceInsufficient"
+//  OPERATIONDENIED_NOTALLOW = "OperationDenied.NotAllow"
+//  OPERATIONDENIED_RESOURCEGROUPINSUFFICIENT = "OperationDenied.ResourceGroupInsufficient"
+//  OPERATIONDENIED_WHITELISTQUOTAEXCEED = "OperationDenied.WhitelistQuotaExceed"
+//  RESOURCEINSUFFICIENT_SSHPORTISCONSUMEDUP = "ResourceInsufficient.SSHPortIsConsumedUp"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  RESOURCENOTFOUND_RESOURCEGROUPNOTFOUND = "ResourceNotFound.ResourceGroupNotFound"
+//  UNAUTHORIZEDOPERATION = "UnauthorizedOperation"
+//  UNAUTHORIZEDOPERATION_NOPERMISSION = "UnauthorizedOperation.NoPermission"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+func (c *Client) StartNotebook(request *StartNotebookRequest) (response *StartNotebookResponse, err error) {
+    return c.StartNotebookWithContext(context.Background(), request)
+}
+
+// StartNotebook
+// 启动Notebook
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_MODIFYBILLINGINSTANCEBATCHFAILED = "FailedOperation.ModifyBillingInstanceBatchFailed"
+//  FAILEDOPERATION_NOTALLOW = "FailedOperation.NotAllow"
+//  FAILEDOPERATION_QUERYRESOURCESPECFAILED = "FailedOperation.QueryResourceSpecFailed"
+//  INTERNALERROR = "InternalError"
+//  INTERNALERROR_QUERYRESOURCEGROUPFAILED = "InternalError.QueryResourceGroupFailed"
+//  INTERNALERROR_QUERYSUBNETINFOFAILED = "InternalError.QuerySubnetInfoFailed"
+//  INTERNALERROR_QUERYUSERTMPCREDENTIALFAILED = "InternalError.QueryUserTMPCredentialFailed"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETER_UNSUPPORTEDMULTILOCALDISK = "InvalidParameter.UnsupportedMultiLocalDisk"
+//  INVALIDPARAMETERVALUE = "InvalidParameterValue"
+//  INVALIDPARAMETERVALUE_DATACONFIGNUMLIMITEXCEEDED = "InvalidParameterValue.DataConfigNumLimitExceeded"
+//  INVALIDPARAMETERVALUE_GETCFSMOUNTIPFAILED = "InvalidParameterValue.GetCFSMountIPFailed"
+//  INVALIDPARAMETERVALUE_NOTALLOWEDTOCREATEFREEVOLUMENOTEBOOKWITHBAREMETALRESOURCEGROUP = "InvalidParameterValue.NotAllowedToCreateFreeVolumeNotebookWithBareMetalResourceGroup"
+//  INVALIDPARAMETERVALUE_NOTALLOWEDTOCREATEFREEVOLUMENOTEBOOKWITHSWRESOURCEGROUP = "InvalidParameterValue.NotAllowedToCreateFreeVolumeNotebookWithSWResourceGroup"
+//  INVALIDPARAMETERVALUE_NOTALLOWEDTOCREATENOTEBOOKWITHBAREMETALRESOURCEGROUP = "InvalidParameterValue.NotAllowedToCreateNotebookWithBareMetalResourceGroup"
+//  INVALIDPARAMETERVALUE_PATHILLEGAL = "InvalidParameterValue.PathIllegal"
+//  INVALIDPARAMETERVALUE_UNSUPPORTEDMULTICBSSTORAGE = "InvalidParameterValue.UnsupportedMultiCBSStorage"
+//  OPERATIONDENIED = "OperationDenied"
+//  OPERATIONDENIED_BALANCEINSUFFICIENT = "OperationDenied.BalanceInsufficient"
+//  OPERATIONDENIED_BILLINGSTATUSRESOURCEINSUFFICIENT = "OperationDenied.BillingStatusResourceInsufficient"
+//  OPERATIONDENIED_IPILLEGAL = "OperationDenied.IpIllegal"
+//  OPERATIONDENIED_MIYINGBALANCEINSUFFICIENT = "OperationDenied.MIYINGBalanceInsufficient"
+//  OPERATIONDENIED_NOTALLOW = "OperationDenied.NotAllow"
+//  OPERATIONDENIED_RESOURCEGROUPINSUFFICIENT = "OperationDenied.ResourceGroupInsufficient"
+//  OPERATIONDENIED_WHITELISTQUOTAEXCEED = "OperationDenied.WhitelistQuotaExceed"
+//  RESOURCEINSUFFICIENT_SSHPORTISCONSUMEDUP = "ResourceInsufficient.SSHPortIsConsumedUp"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  RESOURCENOTFOUND_RESOURCEGROUPNOTFOUND = "ResourceNotFound.ResourceGroupNotFound"
+//  UNAUTHORIZEDOPERATION = "UnauthorizedOperation"
+//  UNAUTHORIZEDOPERATION_NOPERMISSION = "UnauthorizedOperation.NoPermission"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+func (c *Client) StartNotebookWithContext(ctx context.Context, request *StartNotebookRequest) (response *StartNotebookResponse, err error) {
+    if request == nil {
+        request = NewStartNotebookRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("StartNotebook require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewStartNotebookResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewStopModelAccelerateTaskRequest() (request *StopModelAccelerateTaskRequest) {
+    request = &StopModelAccelerateTaskRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "StopModelAccelerateTask")
+    
+    
+    return
+}
+
+func NewStopModelAccelerateTaskResponse() (response *StopModelAccelerateTaskResponse) {
+    response = &StopModelAccelerateTaskResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// StopModelAccelerateTask
+// 停止模型加速任务
+//
+// 可能返回的错误码:
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  AUTHFAILURE_UNAUTHORIZEDOPERATION = "AuthFailure.UnauthorizedOperation"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  MISSINGPARAMETER = "MissingParameter"
+func (c *Client) StopModelAccelerateTask(request *StopModelAccelerateTaskRequest) (response *StopModelAccelerateTaskResponse, err error) {
+    return c.StopModelAccelerateTaskWithContext(context.Background(), request)
+}
+
+// StopModelAccelerateTask
+// 停止模型加速任务
+//
+// 可能返回的错误码:
+//  AUTHFAILURE_CAMEXCEPTION = "AuthFailure.CamException"
+//  AUTHFAILURE_UNAUTHORIZEDOPERATION = "AuthFailure.UnauthorizedOperation"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_EXECDATABASEFAIL = "FailedOperation.ExecDatabaseFail"
+//  FAILEDOPERATION_QUERYDATABASEFAIL = "FailedOperation.QueryDatabaseFail"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  MISSINGPARAMETER = "MissingParameter"
+func (c *Client) StopModelAccelerateTaskWithContext(ctx context.Context, request *StopModelAccelerateTaskRequest) (response *StopModelAccelerateTaskResponse, err error) {
+    if request == nil {
+        request = NewStopModelAccelerateTaskRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("StopModelAccelerateTask require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewStopModelAccelerateTaskResponse()
+    err = c.Send(request, response)
+    return
+}
+
+func NewStopNotebookRequest() (request *StopNotebookRequest) {
+    request = &StopNotebookRequest{
+        BaseRequest: &tchttp.BaseRequest{},
+    }
+    
+    request.Init().WithApiInfo("tione", APIVersion, "StopNotebook")
+    
+    
+    return
+}
+
+func NewStopNotebookResponse() (response *StopNotebookResponse) {
+    response = &StopNotebookResponse{
+        BaseResponse: &tchttp.BaseResponse{},
+    } 
+    return
+
+}
+
+// StopNotebook
+// 停止Notebook
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_NOTALLOW = "FailedOperation.NotAllow"
+//  FAILEDOPERATION_STOPJOBINSTANCEFAILED = "FailedOperation.StopJobInstanceFailed"
+//  FAILEDOPERATION_UNSUBMITNOTALLOWTOSTOP = "FailedOperation.UnSubmitNotAllowToStop"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETERVALUE = "InvalidParameterValue"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  UNAUTHORIZEDOPERATION = "UnauthorizedOperation"
+//  UNAUTHORIZEDOPERATION_NOPERMISSION = "UnauthorizedOperation.NoPermission"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+func (c *Client) StopNotebook(request *StopNotebookRequest) (response *StopNotebookResponse, err error) {
+    return c.StopNotebookWithContext(context.Background(), request)
+}
+
+// StopNotebook
+// 停止Notebook
+//
+// 可能返回的错误码:
+//  AUTHFAILURE = "AuthFailure"
+//  FAILEDOPERATION = "FailedOperation"
+//  FAILEDOPERATION_NOTALLOW = "FailedOperation.NotAllow"
+//  FAILEDOPERATION_STOPJOBINSTANCEFAILED = "FailedOperation.StopJobInstanceFailed"
+//  FAILEDOPERATION_UNSUBMITNOTALLOWTOSTOP = "FailedOperation.UnSubmitNotAllowToStop"
+//  INTERNALERROR = "InternalError"
+//  INVALIDPARAMETER = "InvalidParameter"
+//  INVALIDPARAMETERVALUE = "InvalidParameterValue"
+//  RESOURCENOTFOUND = "ResourceNotFound"
+//  UNAUTHORIZEDOPERATION = "UnauthorizedOperation"
+//  UNAUTHORIZEDOPERATION_NOPERMISSION = "UnauthorizedOperation.NoPermission"
+//  UNKNOWNPARAMETER = "UnknownParameter"
+func (c *Client) StopNotebookWithContext(ctx context.Context, request *StopNotebookRequest) (response *StopNotebookResponse, err error) {
+    if request == nil {
+        request = NewStopNotebookRequest()
+    }
+    
+    if c.GetCredential() == nil {
+        return nil, errors.New("StopNotebook require credential")
+    }
+
+    request.SetContext(ctx)
+    
+    response = NewStopNotebookResponse()
+    err = c.Send(request, response)
+    return
+}
