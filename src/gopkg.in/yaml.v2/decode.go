@@ -19,13 +19,14 @@ const (
 )
 
 type node struct {
-	kind         int
-	line, column int
-	tag          string
-	value        string
-	implicit     bool
-	children     []*node
-	anchors      map[string]*node
+	kind          int
+	line, column  int
+	tag           string
+	value         string
+	originalValue string
+	implicit      bool
+	children      []*node
+	anchors       map[string]*node
 }
 
 // ----------------------------------------------------------------------------
@@ -154,11 +155,24 @@ func (p *parser) alias() *node {
 func (p *parser) scalar() *node {
 	n := p.node(scalarNode)
 	n.value = string(p.event.value)
+	n.originalValue = captureOriginalValue(&p.event)
 	n.tag = string(p.event.tag)
 	n.implicit = p.event.implicit
 	p.anchor(n, p.event.anchor)
 	p.skip()
 	return n
+}
+
+// to capture the original value (this function should be implemented)
+func captureOriginalValue(event *yaml_event_t) string {
+	// This function should construct the original value from the event
+	// Here, we assume the value is surrounded by quotes if it was quoted in the YAML file
+	if yaml_scalar_style_t(event.style) == yaml_DOUBLE_QUOTED_SCALAR_STYLE {
+		return "\"" + string(event.value) + "\""
+	} else if yaml_scalar_style_t(event.style) == yaml_SINGLE_QUOTED_SCALAR_STYLE {
+		return "'" + string(event.value) + "'"
+	}
+	return string(event.value)
 }
 
 func (p *parser) sequence() *node {
@@ -551,6 +565,7 @@ func (d *decoder) mapping(n *node, out reflect.Value) (good bool) {
 			continue
 		}
 		k := reflect.New(kt).Elem()
+		originalKey := n.children[i].originalValue
 		if d.unmarshal(n.children[i], k) {
 			kkind := k.Kind()
 			if kkind == reflect.Interface {
@@ -561,6 +576,7 @@ func (d *decoder) mapping(n *node, out reflect.Value) (good bool) {
 			}
 			e := reflect.New(et).Elem()
 			if d.unmarshal(n.children[i+1], e) {
+				k = reflect.ValueOf(originalKey)
 				out.SetMapIndex(k, e)
 			}
 		}
