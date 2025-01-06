@@ -1,2 +1,4 @@
 .DS_Store
+.latest_commit_hash.txt
+src/github.com/wimspaargaren/yolov3/.idea/
 src/github.com/wimspaargaren/yolov3/data/
