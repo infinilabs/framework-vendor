@@ -29,6 +29,6 @@ jobs:
     with:
       # Example of specifying custom arguments
       scan-args: |-
-        -r
-        --skip-git
+        --recursive
+        --skip-git=true
         ./
