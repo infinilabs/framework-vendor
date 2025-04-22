@@ -8,9 +8,9 @@
   },
   "devDependencies": {
     "browserify": "^17.0.0",
-    "gulp": "^4.0.2",
+    "gulp": "^5.0.0",
     "gulp-clean": "^0.4.0",
-    "gulp-cli": "^2.3.0",
+    "gulp-cli": "^3.0.0",
     "gulp-dart-sass": "^1.0.2",
     "gulp-notify": "^4.0.0",
     "gulp-sourcemaps": "^3.0.0",
@@ -23,10 +23,10 @@
   },
   "dependencies": {
     "backbone": "^1.4.0",
-    "bootbox": "^5.5.2",
-    "bootstrap": "^3.4.1",
+    "bootbox": "^6.0.1",
+    "bootstrap": "^5.3.5",
     "jquery": "^3.6.0",
-    "moment": "^2.29.1",
+    "moment": "^2.29.4",
     "underscore": "^1.13.1"
   },
   "browserify": {
