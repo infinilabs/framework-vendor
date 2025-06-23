@@ -19,9 +19,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
-
-	"go.uber.org/zap"
 )
 
 // Order is an object that "represents a client's request for a certificate
@@ -41,6 +40,13 @@ type Order struct {
 	// in [RFC3339].  This field is REQUIRED for objects with "pending"
 	// or "valid" in the status field.
 	Expires time.Time `json:"expires,omitempty"`
+
+	// profile (string, optional): A string uniquely identifying the profile
+	// which will be used to affect issuance of the certificate requested by
+	// this Order.
+	//
+	// EXPERIMENTAL: Draft ACME extension: draft-aaron-acme-profiles-00
+	Profile string `json:"profile,omitempty"`
 
 	// identifiers (required, array of object):  An array of identifier
 	// objects that the order pertains to.
@@ -127,9 +133,26 @@ func (c *Client) NewOrder(ctx context.Context, account Account, order Order) (Or
 		return order, err
 	}
 	if c.Logger != nil {
-		c.Logger.Debug("creating order",
-			zap.String("account", account.Location),
-			zap.Strings("identifiers", order.identifierValues()))
+		c.Logger.LogAttrs(ctx, slog.LevelDebug, "creating order",
+			slog.String("account", account.Location),
+			slog.Any("identifiers", order.identifierValues()))
+	}
+	if order.Profile != "" {
+		// "The client MUST NOT request a profile name that is not advertised in the server's Directory metadata object."
+		// https://www.ietf.org/archive/id/draft-aaron-acme-profiles-00.html#section-4
+		if c.dir.Meta == nil {
+			return order, fmt.Errorf("ACME server does not advertise support for profiles: %+v", c.dir.Meta)
+		}
+		var found bool
+		for profileName := range c.dir.Meta.Profiles {
+			if profileName == order.Profile {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return order, fmt.Errorf("unknown profile name '%s'; supported profiles: %v", order.Profile, c.dir.Meta.Profiles)
+		}
 	}
 	resp, err := c.httpPostJWS(ctx, account.PrivateKey, account.Location, c.dir.NewOrder, order, &order)
 	if err != nil {
